@@ -1,0 +1,286 @@
+import { onError } from "@orpc/server";
+import { RPCHandler } from "@orpc/server/fetch";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+
+import { router } from "./router";
+import { syncJobDetails } from "./detail-sync";
+import { jobCategoryIds } from "./job-classification";
+import { createRequest, parseResponse, type IngestInput, type Platform } from "./tikhub";
+
+const app = new Hono<{ Bindings: CloudflareBindings }>();
+
+app.use(
+  "/rpc/*",
+  cors({
+    allowHeaders: ["Content-Type", "Authorization"],
+    allowMethods: ["GET", "POST", "OPTIONS"],
+    origin: "*",
+  }),
+);
+
+app.get("/", (c) =>
+  c.json({
+    name: "folk-job-api",
+    rpc: "/rpc",
+  }),
+);
+
+app.get("/health", (c) =>
+  c.json({
+    service: "folk-job-api",
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  }),
+);
+
+app.get("/jobs", async (c) => {
+  const requestedPage = Number(c.req.query("page") ?? 1);
+  const requestedPageSize = Number(c.req.query("pageSize") ?? c.req.query("limit") ?? 100);
+  const page = Math.max(Number.isFinite(requestedPage) ? Math.floor(requestedPage) : 1, 1);
+  const pageSize = Math.min(Math.max(Number.isFinite(requestedPageSize) ? Math.floor(requestedPageSize) : 100, 1), 100);
+  const platforms = (c.req.query("platform") ?? "").split(",").filter((value) => value === "XHS" || value === "X");
+  const requestedCategories = (c.req.query("category") ?? "").split(",");
+  const categories = requestedCategories.filter((value) => jobCategoryIds.includes(value as typeof jobCategoryIds[number]));
+  const cutoff = c.req.query("since");
+  const search = c.req.query("q")?.trim();
+  const sort = c.req.query("sort") === "popular" ? "popular" : "latest";
+  const conditions: string[] = ["j.category IS NOT NULL"];
+  const bindings: (string | number)[] = [];
+
+  if (platforms.length) {
+    conditions.push(`j.platform IN (${platforms.map(() => "?").join(", ")})`);
+    bindings.push(...platforms);
+  }
+  if (categories.length) {
+    conditions.push(`j.category IN (${categories.map(() => "?").join(", ")})`);
+    bindings.push(...categories);
+  }
+  if (cutoff) {
+    conditions.push("j.published_at >= ?");
+    bindings.push(cutoff);
+  }
+  if (search) {
+    conditions.push("(j.title LIKE ? OR j.body LIKE ? OR j.author_name LIKE ? OR s.company_name LIKE ? OR s.position_title LIKE ? OR s.work_location LIKE ?)");
+    const pattern = `%${search}%`;
+    bindings.push(pattern, pattern, pattern, pattern, pattern, pattern);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const count = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS total FROM jobs j LEFT JOIN job_structured_details s ON s.job_id = j.id ${where}`,
+  ).bind(...bindings).first<{ total: number }>();
+  const total = Number(count?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const orderBy = sort === "popular"
+    ? "j.likes + j.comments + j.reposts DESC, j.published_at DESC"
+    : "j.published_at DESC";
+  const result = await c.env.DB.prepare(
+    `SELECT j.id, j.platform, j.platform_post_id, j.title, j.body, j.excerpt, j.author_name,
+      j.author_handle, j.source_url, j.published_at, j.first_seen_at, j.last_seen_at,
+      j.likes, j.comments, j.reposts, j.views, j.image_url, j.category,
+      s.company_name, s.company_nature, s.recruitment_target, s.position_title,
+      s.positions_json, s.work_location, s.work_mode, s.employment_type, s.salary,
+      s.experience_requirement, s.education_requirement, s.skills_json, s.benefits_json,
+      s.application_url, s.contact, s.application_deadline, s.summary AS structured_summary,
+      s.language, s.confidence, s.structured_at
+     FROM jobs j LEFT JOIN job_structured_details s ON s.job_id = j.id ${where}
+     ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+  ).bind(...bindings, pageSize, (currentPage - 1) * pageSize).all();
+
+  return c.json({
+    jobs: result.results,
+    count: result.results.length,
+    total,
+    page: currentPage,
+    pageSize,
+    totalPages,
+  });
+});
+
+async function findJob(db: D1Database, id: string) {
+  return db.prepare(
+    `SELECT j.id, j.platform, j.platform_post_id, j.title, j.body, j.excerpt, j.author_name,
+      j.author_handle, j.source_url, j.published_at, j.first_seen_at, j.last_seen_at,
+      j.likes, j.comments, j.reposts, j.views, j.image_url, j.category,
+      s.company_name, s.company_nature, s.recruitment_target, s.position_title,
+      s.positions_json, s.work_location, s.work_mode, s.employment_type, s.salary,
+      s.experience_requirement, s.education_requirement, s.skills_json, s.benefits_json,
+      s.application_url, s.contact, s.application_deadline, s.summary AS structured_summary,
+      s.language, s.confidence, s.structured_at
+     FROM jobs j LEFT JOIN job_structured_details s ON s.job_id = j.id WHERE j.id = ?`,
+  ).bind(id).first();
+}
+
+app.get("/job", async (c) => {
+  const id = c.req.query("id");
+  if (!id) return c.json({ error: "id is required" }, 400);
+
+  const job = await findJob(c.env.DB, id);
+  return job ? c.json({ job }) : c.json({ error: "Job not found" }, 404);
+});
+
+app.get("/jobs/:id", async (c) => {
+  const job = await findJob(c.env.DB, c.req.param("id"));
+
+  return job ? c.json({ job }) : c.json({ error: "Job not found" }, 404);
+});
+
+app.get("/stats", async (c) => {
+  const counts = await c.env.DB.prepare(
+    "SELECT platform, COUNT(*) AS count FROM jobs GROUP BY platform ORDER BY platform",
+  ).all();
+  const batches = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS count, MAX(fetched_at) AS last_fetched_at FROM crawl_batches",
+  ).first();
+  return c.json({ jobs: counts.results, batches });
+});
+
+app.post("/admin/ingest/tikhub", async (c) => {
+  const authorization = c.req.header("Authorization");
+  if (!c.env.INGEST_TOKEN || authorization !== `Bearer ${c.env.INGEST_TOKEN}`) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  const input = await c.req.json<IngestInput>();
+  if ((input.platform !== "XHS" && input.platform !== "X") || !input.query?.trim()) {
+    return c.json({ error: "platform and query are required" }, 400);
+  }
+
+  const requestUrl = createRequest({ ...input, query: input.query.trim() });
+  const upstream = await fetch(requestUrl, {
+    headers: { Authorization: `Bearer ${c.env.TIKHUB_API_KEY}` },
+  });
+  const rawText = await upstream.text();
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawText);
+  } catch {
+    return c.json({ error: "TikHub returned invalid JSON", status: upstream.status }, 502);
+  }
+  if (!upstream.ok) {
+    return c.json({ error: "TikHub request failed", status: upstream.status, payload }, 502);
+  }
+
+  const parsed = parseResponse(input.platform, payload);
+  const now = new Date().toISOString();
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recruitmentPattern = input.platform === "XHS"
+    ? /(招聘|招人|急聘|诚聘|招募|岗位|内推|加入我们|招聘启事|招聘信息)/i
+    : /(we(?:'|’)re hiring|we are hiring|hiring for|job opening|open role|open position|vacanc(?:y|ies)|join our team|now hiring|apply for|recruiting)/i;
+  const acceptedJobs = parsed.jobs.filter((job) =>
+    new Date(job.publishedAt).valueOf() >= cutoff
+    && recruitmentPattern.test(`${job.title}\n${job.body}`),
+  );
+  const pageCursor = input.platform === "XHS"
+    ? String(input.page ?? 1)
+    : input.cursor ?? null;
+  const batch = await c.env.DB.prepare(
+    `INSERT INTO crawl_batches
+      (platform, query, request_url, provider_request_id, page_cursor, fetched_at, item_count, raw_response)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+  ).bind(
+    input.platform,
+    input.query.trim(),
+    requestUrl.toString(),
+    parsed.providerRequestId,
+    pageCursor,
+    now,
+    parsed.jobs.length,
+    rawText,
+  ).first<{ id: number }>();
+
+  if (!batch) return c.json({ error: "Failed to store crawl batch" }, 500);
+
+  const statements = acceptedJobs.map((job) => c.env.DB.prepare(
+    `INSERT INTO jobs
+      (id, platform, platform_post_id, title, body, excerpt, author_name, author_handle,
+       source_url, published_at, first_seen_at, last_seen_at, likes, comments, reposts,
+       views, image_url, raw_batch_id, content_type)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (platform, platform_post_id) DO UPDATE SET
+       title = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.title ELSE jobs.title END,
+       body = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.body ELSE jobs.body END,
+       excerpt = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.excerpt ELSE jobs.excerpt END,
+       author_name = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.author_name ELSE jobs.author_name END,
+       author_handle = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.author_handle ELSE jobs.author_handle END,
+       source_url = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.source_url ELSE jobs.source_url END,
+       published_at = excluded.published_at,
+       last_seen_at = excluded.last_seen_at,
+       likes = excluded.likes,
+       comments = excluded.comments,
+       reposts = excluded.reposts,
+       views = excluded.views,
+       image_url = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.image_url ELSE jobs.image_url END,
+       raw_batch_id = excluded.raw_batch_id,
+       content_type = excluded.content_type`,
+  ).bind(
+    job.id,
+    job.platform,
+    job.platformPostId,
+    job.title,
+    job.body,
+    job.excerpt,
+    job.authorName,
+    job.authorHandle,
+    job.sourceUrl,
+    job.publishedAt,
+    now,
+    now,
+    job.likes,
+    job.comments,
+    job.reposts,
+    job.views,
+    job.imageUrl,
+    batch.id,
+    job.contentType,
+  ));
+
+  if (statements.length) await c.env.DB.batch(statements);
+  const details = await syncJobDetails(c.env.DB, c.env.TIKHUB_API_KEY, acceptedJobs);
+  const total = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM jobs WHERE platform = ?",
+  ).bind(input.platform as Platform).first<{ count: number }>();
+
+  return c.json({
+    batchId: batch.id,
+    platform: input.platform,
+    received: parsed.jobs.length,
+    accepted: acceptedJobs.length,
+    details,
+    total: total?.count ?? 0,
+    next: parsed.next,
+    providerRequestId: parsed.providerRequestId,
+  });
+});
+
+const rpcHandler = new RPCHandler(router, {
+  interceptors: [
+    onError((error) => {
+      console.error(
+        JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+          message: "oRPC request failed",
+        }),
+      );
+    }),
+  ],
+});
+
+app.use("/rpc/*", async (c, next) => {
+  const { matched, response } = await rpcHandler.handle(c.req.raw, {
+    context: {},
+    prefix: "/rpc",
+  });
+
+  if (matched) {
+    return c.newResponse(response.body, response);
+  }
+
+  await next();
+});
+
+app.notFound((c) => c.json({ error: "Not found" }, 404));
+
+export default app;

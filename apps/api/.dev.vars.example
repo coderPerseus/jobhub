@@ -1,0 +1,4 @@
+TIKHUB_API_KEY="replace-with-your-tikhub-api-key"
+INGEST_TOKEN="replace-with-a-random-admin-token"
+NEW_API_KEY="replace-with-your-openai-compatible-api-key"
+NEW_API_BASE_URL="https://mediocre-new-api.midway.run/v1/chat/completions"

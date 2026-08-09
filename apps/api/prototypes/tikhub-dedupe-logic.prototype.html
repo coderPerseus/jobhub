@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PROTOTYPE — 招聘帖子增量抓取</title>
+    <style>
+      :root {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #1b211d;
+        background: #f4f5f1;
+        --accent: #166c4b;
+        --muted: #69736c;
+        --line: #d8ddd8;
+        --paper: #fffefa;
+        --warn: #9a5b14;
+      }
+
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 56px 0 96px; }
+      h1, h2, h3, p { margin-top: 0; }
+      h1 { max-width: 760px; margin-bottom: 14px; font-size: clamp(2.4rem, 6vw, 4.8rem); line-height: .98; letter-spacing: -.05em; }
+      h2 { margin-bottom: 20px; font-size: 1.15rem; }
+      button { font: inherit; }
+      .kicker { color: var(--accent); font-size: .76rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+      .intro { max-width: 820px; color: #465049; font-size: 1.06rem; line-height: 1.7; }
+      .verdict { margin: 28px 0 36px; padding: 18px 20px; border-left: 4px solid var(--warn); background: #fff5e7; line-height: 1.6; }
+      .panel { margin-top: 18px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper); }
+      .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+      .metric { min-height: 110px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+      .metric span { display: block; color: var(--muted); font-size: .82rem; }
+      .metric strong { display: block; margin-top: 14px; font-size: 1.8rem; }
+      .change { margin: 16px 0 0; color: var(--accent); line-height: 1.5; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+      .actions button, .step button, .tabs button { padding: 10px 14px; border: 1px solid var(--line); border-radius: 999px; background: white; color: #263029; cursor: pointer; }
+      .actions button:hover, .step button:hover, .tabs button:hover { border-color: var(--accent); }
+      .actions .primary, .step button { border-color: var(--accent); background: var(--accent); color: white; }
+      .tables { display: grid; grid-template-columns: 1.05fr .95fr; gap: 18px; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+      th, td { padding: 11px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+      th { color: var(--muted); font-size: .75rem; font-weight: 700; }
+      .empty { color: var(--muted); font-style: italic; }
+      .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+      .tabs button[aria-selected="true"] { border-color: var(--accent); background: #e5f1ea; color: var(--accent); }
+      .scenario-copy { max-width: 760px; color: var(--muted); line-height: 1.6; }
+      .steps { display: grid; gap: 10px; margin-top: 18px; }
+      .step { display: grid; grid-template-columns: 32px 1fr auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+      .step.done { opacity: .5; }
+      .step-index { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #edf0ec; font-weight: 700; }
+      .note { margin-top: 18px; color: var(--muted); font-size: .84rem; }
+      @media (max-width: 780px) {
+        .metrics, .tables { grid-template-columns: 1fr 1fr; }
+        .tables { grid-template-columns: 1fr; }
+        .step { grid-template-columns: 32px 1fr; }
+        .step button { grid-column: 2; justify-self: start; }
+      }
+      @media (max-width: 520px) { .metrics { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">Throwaway logic prototype</p>
+      <h1>招聘帖子增量抓取，能否做到不重复？</h1>
+      <p class="intro">
+        这个原型验证的状态模型是：TikHub 每次返回一个可能与历史重叠的最近内容窗口，我们是否能保证帖子只入库一次，并看清哪些重复费用可以减少、哪些无法消除。
+      </p>
+      <div class="verdict">
+        <strong>当前判断：</strong>稳定帖子 ID 可以保证不重复入库；TikHub 按成功请求计费，无法保证每次响应只含新帖，所以“绝不为重复结果付费”不能由客户端完全实现。
+      </div>
+
+      <section class="panel" aria-labelledby="state-title">
+        <h2 id="state-title">当前状态</h2>
+        <div class="metrics" id="metrics"></div>
+        <p class="change" id="last-change"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="free-title">
+        <h2 id="free-title">自由尝试</h2>
+        <div class="actions">
+          <button class="primary" data-action="RUN_WINDOW">抓取今天的 24 小时窗口</button>
+          <button data-action="RERUN_WINDOW">原样重复抓取</button>
+          <button data-action="NEXT_DAY">进入下一天并出现新帖</button>
+          <button data-action="CRASH_AFTER_RESPONSE">付费响应后立即故障</button>
+          <button data-action="RETRY_FAILED">重试未完成任务</button>
+          <button data-action="RESET">重置</button>
+        </div>
+      </section>
+
+      <section class="tables">
+        <div class="panel">
+          <h2>已保存的唯一帖子</h2>
+          <div class="table-wrap"><table id="posts-table"></table></div>
+        </div>
+        <div class="panel">
+          <h2>最近一次去重判断</h2>
+          <div class="table-wrap"><table id="decisions-table"></table></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>付费请求记录</h2>
+        <div class="table-wrap"><table id="requests-table"></table></div>
+      </section>
+
+      <section class="panel" aria-labelledby="walkthrough-title">
+        <h2 id="walkthrough-title">引导场景</h2>
+        <div class="tabs" id="tabs"></div>
+        <div id="scenario"></div>
+      </section>
+
+      <p class="note">PROTOTYPE：所有数据都在内存中，刷新页面即清空。这里的帖子和费用事件是用于推演的样例，不是 TikHub 真实响应。</p>
+    </main>
+
+    <script>
+      // Portable domain module: pure state transitions, no DOM access.
+      const IngestionModel = (() => {
+        const prices = { xiaohongshu: 0.01, twitter: 0.001 };
+        const initialState = () => ({
+          day: 1,
+          storedPosts: [],
+          requests: [],
+          decisions: [],
+          failedRun: false,
+          lastChange: "尚未抓取。先执行一次今天的 24 小时窗口。",
+        });
+
+        const post = (platform, id, query, title, day) => ({ platform, id, query, title, day });
+
+        const batchesForDay = (day) => {
+          if (day === 1) {
+            return [
+              { platform: "xiaohongshu", query: "招聘", posts: [post("xiaohongshu", "xhs-101", "招聘", "AI 创业团队招产品经理", 1), post("xiaohongshu", "xhs-102", "招聘", "上海设计工作机会", 1)] },
+              { platform: "xiaohongshu", query: "招人", posts: [post("xiaohongshu", "xhs-102", "招人", "上海设计工作机会", 1), post("xiaohongshu", "xhs-103", "招人", "远程内容运营招人", 1)] },
+              { platform: "twitter", query: "hiring OR job opening", posts: [post("twitter", "tw-201", "hiring OR job opening", "We're hiring a founding engineer", 1), post("twitter", "tw-202", "hiring OR job opening", "New remote frontend opening", 1)] },
+            ];
+          }
+
+          return [
+            { platform: "xiaohongshu", query: "招聘", posts: [post("xiaohongshu", "xhs-103", "招聘", "远程内容运营招人", 1), post("xiaohongshu", "xhs-104", "招聘", "杭州招聘独立开发者", day)] },
+            { platform: "xiaohongshu", query: "招人", posts: [post("xiaohongshu", "xhs-104", "招人", "杭州招聘独立开发者", day)] },
+            { platform: "twitter", query: "hiring OR job opening", posts: [post("twitter", "tw-202", "hiring OR job opening", "New remote frontend opening", 1), post("twitter", "tw-203", "hiring OR job opening", "Looking for our first designer", day)] },
+          ];
+        };
+
+        const chargeBatches = (state, batches, label) => {
+          const nextRequests = batches.map((batch, index) => ({
+            number: state.requests.length + index + 1,
+            platform: batch.platform,
+            query: batch.query,
+            cost: prices[batch.platform],
+            label,
+          }));
+          return { ...state, requests: [...state.requests, ...nextRequests] };
+        };
+
+        const ingest = (state, batches, label) => {
+          let next = chargeBatches(state, batches, label);
+          const known = new Set(next.storedPosts.map((item) => `${item.platform}:${item.id}`));
+          const storedPosts = [...next.storedPosts];
+          const decisions = [];
+
+          for (const batch of batches) {
+            for (const candidate of batch.posts) {
+              const key = `${candidate.platform}:${candidate.id}`;
+              const isNew = !known.has(key);
+              decisions.push({ ...candidate, isNew });
+              if (isNew) {
+                known.add(key);
+                storedPosts.push(candidate);
+              }
+            }
+          }
+
+          const added = decisions.filter((item) => item.isNew).length;
+          const duplicate = decisions.length - added;
+          return {
+            ...next,
+            storedPosts,
+            decisions,
+            failedRun: false,
+            lastChange: `本次新增 ${added} 条，拦截 ${duplicate} 条重复；但 ${batches.length} 个搜索请求仍然计费。`,
+          };
+        };
+
+        const reducer = (state, action) => {
+          switch (action.type) {
+            case "RESET":
+              return initialState();
+            case "RUN_WINDOW":
+              return ingest(state, batchesForDay(state.day), `第 ${state.day} 天正常抓取`);
+            case "RERUN_WINDOW":
+              return ingest(state, batchesForDay(state.day), `第 ${state.day} 天重复抓取`);
+            case "NEXT_DAY": {
+              const advanced = { ...state, day: state.day + 1, lastChange: "时间进入下一天，上游出现了 2 条新帖。" };
+              return ingest(advanced, batchesForDay(advanced.day), `第 ${advanced.day} 天正常抓取`);
+            }
+            case "CRASH_AFTER_RESPONSE": {
+              const batches = batchesForDay(state.day);
+              const charged = chargeBatches(state, batches, `第 ${state.day} 天响应后故障`);
+              return {
+                ...charged,
+                decisions: [],
+                failedRun: true,
+                lastChange: `TikHub 已返回并计费 ${batches.length} 次，但进程在保存响应前故障。这个费用无法从客户端撤销。`,
+              };
+            }
+            case "RETRY_FAILED":
+              if (!state.failedRun) return { ...state, lastChange: "没有未完成任务，因此没有发起请求。" };
+              return ingest(state, batchesForDay(state.day), `第 ${state.day} 天故障重试`);
+            default:
+              return state;
+          }
+        };
+
+        const summarize = (state) => ({
+          day: state.day,
+          uniquePosts: state.storedPosts.length,
+          paidRequests: state.requests.length,
+          totalCost: state.requests.reduce((sum, item) => sum + item.cost, 0),
+        });
+
+        return { initialState, reducer, summarize };
+      })();
+
+      const scenarios = [
+        {
+          name: "正常增量",
+          description: "先抓今天，再进入下一天。观察历史帖子不会再次入库，新帖子会被接受。",
+          steps: [
+            ["RUN_WINDOW", "抓取第 1 天"],
+            ["NEXT_DAY", "进入第 2 天并抓取"],
+          ],
+        },
+        {
+          name: "关键词重叠",
+          description: "同一条小红书笔记同时命中“招聘”和“招人”。唯一键会在同一次任务里立即拦截它。",
+          steps: [["RUN_WINDOW", "执行含两个关键词的抓取"]],
+        },
+        {
+          name: "重复窗口",
+          description: "完全相同的 24 小时窗口跑两次。第二次新增为零，但三个搜索请求仍然产生费用。",
+          steps: [
+            ["RUN_WINDOW", "第一次抓取"],
+            ["RERUN_WINDOW", "原样再抓一次"],
+          ],
+        },
+        {
+          name: "故障重试",
+          description: "TikHub 响应后、原始批次保存前发生故障。重试会再次付费，这是没有供应商幂等键时无法完全消除的边界。",
+          steps: [
+            ["CRASH_AFTER_RESPONSE", "模拟响应后故障"],
+            ["RETRY_FAILED", "重试任务"],
+          ],
+        },
+      ];
+
+      let state = IngestionModel.initialState();
+      let activeScenario = 0;
+      let completedSteps = 0;
+
+      const money = (value) => `$${value.toFixed(3)}`;
+      const platformName = (platform) => platform === "xiaohongshu" ? "小红书" : "Twitter";
+      const metric = (label, value) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`;
+      const emptyRow = (columns, copy) => `<tr><td class="empty" colspan="${columns}">${copy}</td></tr>`;
+
+      function render() {
+        const summary = IngestionModel.summarize(state);
+        document.querySelector("#metrics").innerHTML = [
+          metric("当前抓取日", `第 ${summary.day} 天`),
+          metric("唯一帖子", summary.uniquePosts),
+          metric("已付费请求", summary.paidRequests),
+          metric("累计模拟费用", money(summary.totalCost)),
+        ].join("");
+        document.querySelector("#last-change").textContent = state.lastChange;
+
+        document.querySelector("#posts-table").innerHTML = `
+          <thead><tr><th>平台</th><th>稳定 ID</th><th>帖子</th><th>首次出现</th></tr></thead>
+          <tbody>${state.storedPosts.length ? state.storedPosts.map((item) => `<tr><td>${platformName(item.platform)}</td><td>${item.id}</td><td>${item.title}</td><td>第 ${item.day} 天</td></tr>`).join("") : emptyRow(4, "还没有保存帖子")}</tbody>`;
+
+        document.querySelector("#decisions-table").innerHTML = `
+          <thead><tr><th>帖子 ID</th><th>命中关键词</th><th>判断</th></tr></thead>
+          <tbody>${state.decisions.length ? state.decisions.map((item) => `<tr><td>${item.id}</td><td>${item.query}</td><td>${item.isNew ? "新增" : "重复，跳过"}</td></tr>`).join("") : emptyRow(3, "本次没有产生去重判断")}</tbody>`;
+
+        document.querySelector("#requests-table").innerHTML = `
+          <thead><tr><th>#</th><th>平台</th><th>查询</th><th>原因</th><th>费用</th></tr></thead>
+          <tbody>${state.requests.length ? state.requests.map((item) => `<tr><td>${item.number}</td><td>${platformName(item.platform)}</td><td>${item.query}</td><td>${item.label}</td><td>${money(item.cost)}</td></tr>`).join("") : emptyRow(5, "尚未调用付费搜索")}</tbody>`;
+
+        document.querySelector("#tabs").innerHTML = scenarios.map((scenario, index) => `<button data-tab="${index}" aria-selected="${index === activeScenario}">${scenario.name}</button>`).join("");
+        const scenario = scenarios[activeScenario];
+        document.querySelector("#scenario").innerHTML = `
+          <p class="scenario-copy">${scenario.description}</p>
+          <div class="steps">${scenario.steps.map(([action, label], index) => `<div class="step ${index < completedSteps ? "done" : ""}"><span class="step-index">${index + 1}</span><span>${label}</span><button data-step-action="${action}" ${index !== completedSteps ? "disabled" : ""}>执行</button></div>`).join("")}</div>`;
+      }
+
+      function dispatch(type) {
+        state = IngestionModel.reducer(state, { type });
+        render();
+      }
+
+      document.addEventListener("click", (event) => {
+        const actionButton = event.target.closest("[data-action]");
+        if (actionButton) dispatch(actionButton.dataset.action);
+
+        const tabButton = event.target.closest("[data-tab]");
+        if (tabButton) {
+          activeScenario = Number(tabButton.dataset.tab);
+          completedSteps = 0;
+          state = IngestionModel.initialState();
+          render();
+        }
+
+        const stepButton = event.target.closest("[data-step-action]");
+        if (stepButton) {
+          dispatch(stepButton.dataset.stepAction);
+          completedSteps += 1;
+          render();
+        }
+      });
+
+      render();
+    </script>
+  </body>
+</html>

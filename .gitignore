@@ -1,0 +1,23 @@
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+dist-cloudflare/
+.next/
+.open-next/
+.wrangler/
+coverage/
+*.tsbuildinfo
+
+# Local environment files
+.env
+.env.*
+!.env.example
+.dev.vars
+.ai.vars
+!.dev.vars.example
+
+# Editors and operating systems
+.DS_Store
+*.swp
