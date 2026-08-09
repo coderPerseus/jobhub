@@ -110,11 +110,11 @@ export const categoryLabels: Record<JobCategory, string> = {
   backend: "后端",
   mobile: "移动端",
   product: "产品",
-  design: "UI / UX 设计",
+  design: "设计",
   data: "数据",
-  operations: "互联网运营",
-  marketing: "数字营销",
-  other: "其他技术",
+  operations: "运营",
+  marketing: "营销",
+  other: "其他",
 };
 
 const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787").replace(/\/$/, "");
@@ -212,7 +212,7 @@ function toJob(value: ApiJob): Job {
 export async function getJobs(options: JobQuery = {}): Promise<JobPage> {
   const params = new URLSearchParams({
     page: String(options.page ?? 1),
-    pageSize: "100",
+    pageSize: "20",
     sort: options.sort ?? "latest",
   });
   if (options.query) params.set("q", options.query);

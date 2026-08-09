@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "jobhub｜社交网络工作机会",
+    name: "jobhub｜在社交网络里找工作",
     short_name: "jobhub",
-    description: "聚合并结构化展示小红书与 X 上的互联网招聘信息。",
+    description: "在小红书和 X 上发现互联网工作机会。",
     start_url: "/",
     display: "standalone",
     background_color: "#f6f7f2",

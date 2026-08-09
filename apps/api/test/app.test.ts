@@ -112,7 +112,7 @@ describe("API", () => {
     );
 
     expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({ error: "请至少选择一个岗位" });
+    await expect(response.json()).resolves.toEqual({ error: "请先选择想关注的方向" });
   });
 
   it("stores a pending subscription and sends a confirmation email", async () => {
@@ -133,7 +133,7 @@ describe("API", () => {
     expect(send).toHaveBeenCalledOnce();
     expect(send.mock.calls[0][0]).toMatchObject({
       to: "reader@example.com",
-      subject: "确认你的 jobhub 岗位订阅",
+      subject: "确认订阅 jobhub 新机会提醒",
     });
     expect(prepare.mock.calls.some(([statement]) => statement.includes("INSERT INTO email_subscriptions"))).toBe(true);
   });

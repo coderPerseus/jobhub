@@ -190,7 +190,7 @@ app.post("/subscriptions", async (c) => {
   try {
     input = await c.req.json();
   } catch {
-    return c.json({ error: "请求格式无效" }, 400);
+    return c.json({ error: "提交有点问题，请重试" }, 400);
   }
 
   try {
@@ -202,7 +202,7 @@ app.post("/subscriptions", async (c) => {
       error: error instanceof Error ? error.message : String(error),
       message: "Failed to create email subscription",
     }));
-    return c.json({ error: "暂时无法发送确认邮件，请稍后重试" }, 503);
+    return c.json({ error: "邮件暂时发不出去，请稍后再试" }, 503);
   }
 });
 
@@ -211,12 +211,12 @@ app.post("/subscriptions/confirm", async (c) => {
   try {
     input = await c.req.json();
   } catch {
-    return c.json({ error: "请求格式无效" }, 400);
+    return c.json({ error: "提交有点问题，请重试" }, 400);
   }
   const confirmed = await confirmSubscription(c.env.DB, input.token);
   return confirmed
-    ? c.json({ message: "订阅已确认" })
-    : c.json({ error: "确认链接无效或已经使用" }, 400);
+    ? c.json({ message: "订阅成功，有新机会会通知你" })
+    : c.json({ error: "这个链接无效或已经用过了" }, 400);
 });
 
 app.post("/subscriptions/unsubscribe", async (c) => {
@@ -228,8 +228,8 @@ app.post("/subscriptions/unsubscribe", async (c) => {
   }
   const removed = await unsubscribe(c.env.DB, input.token ?? c.req.query("token"));
   return removed
-    ? c.json({ message: "邮件提醒已退订" })
-    : c.json({ error: "退订链接无效或已失效" }, 400);
+    ? c.json({ message: "已退订，不会再收到邮件" })
+    : c.json({ error: "这个链接无效或已经失效了" }, 400);
 });
 
 app.post("/admin/notifications/dispatch", async (c) => {

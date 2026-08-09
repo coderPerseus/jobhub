@@ -12,11 +12,11 @@ const categoryLabels: Record<JobCategory, string> = {
   backend: "后端",
   mobile: "移动端",
   product: "产品",
-  design: "UI / UX 设计",
+  design: "设计",
   data: "数据",
-  operations: "互联网运营",
-  marketing: "数字营销",
-  other: "其他技术",
+  operations: "运营",
+  marketing: "营销",
+  other: "其他",
 };
 
 type SubscriptionRow = {
@@ -89,9 +89,9 @@ function confirmationEmail(email: string, categories: JobCategory[], confirmToke
   return {
     from: { name: "jobhub", email: SENDER_EMAIL },
     to: email,
-    subject: "确认你的 jobhub 岗位订阅",
-    text: `你订阅的岗位：${labels}\n\n请打开下面的链接并确认订阅：\n${confirmUrl}\n\n如果这不是你的操作，可以忽略这封邮件。`,
-    html: `<!doctype html><html><body style="margin:0;background:#f4f1e8;color:#20251f;font-family:Arial,'PingFang SC',sans-serif"><div style="max-width:600px;margin:0 auto;padding:40px 20px"><div style="background:#fffef9;border:1px solid #c9cec7;padding:32px"><p style="margin:0 0 10px;color:#21a65a;font-weight:700">jobhub 岗位提醒</p><h1 style="margin:0 0 18px;font-size:28px">确认你的邮箱订阅</h1><p style="line-height:1.8;color:#555">你关注的岗位：${escapeHtml(labels)}</p><a href="${confirmUrl}" style="display:inline-block;margin:18px 0;padding:13px 20px;background:#b8ea45;color:#20251f;text-decoration:none;font-weight:700">确认订阅</a><p style="margin-top:24px;color:#888;font-size:13px;line-height:1.7">确认后，只在你关注的岗位出现新机会时发送邮件。如果这不是你的操作，可以忽略这封邮件。</p></div></div></body></html>`,
+    subject: "确认订阅 jobhub 新机会提醒",
+    text: `你关注的方向：${labels}\n\n点开下面的链接完成确认：\n${confirmUrl}\n\n如果不是你操作的，忽略这封邮件即可。`,
+    html: `<!doctype html><html><body style="margin:0;background:#f4f1e8;color:#20251f;font-family:Arial,'PingFang SC',sans-serif"><div style="max-width:600px;margin:0 auto;padding:40px 20px"><div style="background:#fffef9;border:1px solid #c9cec7;padding:32px"><p style="margin:0 0 10px;color:#21a65a;font-weight:700">jobhub</p><h1 style="margin:0 0 18px;font-size:28px">确认你的订阅</h1><p style="line-height:1.8;color:#555">你关注的方向：${escapeHtml(labels)}</p><a href="${confirmUrl}" style="display:inline-block;margin:18px 0;padding:13px 20px;background:#b8ea45;color:#20251f;text-decoration:none;font-weight:700">确认订阅</a><p style="margin-top:24px;color:#888;font-size:13px;line-height:1.7">确认后，有新机会会发邮件给你。如果不是你操作的，忽略即可。</p></div></div></body></html>`,
   } satisfies EmailMessageBuilder;
 }
 
@@ -102,8 +102,8 @@ export async function subscribe(
 ) {
   const email = normalizeEmail(input.email);
   const categories = normalizeCategories(input.categories);
-  if (!email) return { ok: false as const, status: 400, error: "请输入有效邮箱地址" };
-  if (categories.length === 0) return { ok: false as const, status: 400, error: "请至少选择一个岗位" };
+  if (!email) return { ok: false as const, status: 400, error: "请填写有效邮箱" };
+  if (categories.length === 0) return { ok: false as const, status: 400, error: "请先选择想关注的方向" };
 
   const existing = await db.prepare(
     `SELECT id, email, categories_json, pending_categories_json, status,
@@ -114,7 +114,7 @@ export async function subscribe(
     ? new Date(existing.last_confirmation_sent_at).valueOf()
     : 0;
   if (lastSent > Date.now() - CONFIRMATION_COOLDOWN_MS) {
-    return { ok: true as const, status: 202, message: "确认邮件已发送，请前往邮箱完成订阅" };
+    return { ok: true as const, status: 202, message: "确认邮件已发送，请去邮箱点一下确认" };
   }
 
   const now = new Date().toISOString();
@@ -142,7 +142,7 @@ export async function subscribe(
     "UPDATE email_subscriptions SET last_confirmation_sent_at = ?, updated_at = ? WHERE id = ?",
   ).bind(now, now, id).run();
 
-  return { ok: true as const, status: 202, message: "确认邮件已发送，请前往邮箱完成订阅" };
+  return { ok: true as const, status: 202, message: "确认邮件已发送，请去邮箱点一下确认" };
 }
 
 export async function confirmSubscription(db: D1Database, rawToken: unknown) {
@@ -178,7 +178,7 @@ function notificationEmail(subscription: SubscriptionRow, jobs: NotificationJob[
   const labels = categories.map((category) => categoryLabels[category]).join("、");
   const rows = jobs.slice(0, 5).map((job) => {
     const title = job.position_title || job.title;
-    const company = job.company_name || "公司待确认";
+    const company = job.company_name || "未写公司名";
     const facts = [job.work_location, job.salary, job.employment_type].filter(Boolean).join(" · ");
     const summary = job.structured_summary || job.excerpt;
     const url = `${APP_URL}/jobs/${encodeURIComponent(job.id)}`;
@@ -193,13 +193,13 @@ function notificationEmail(subscription: SubscriptionRow, jobs: NotificationJob[
   return {
     from: { name: "jobhub", email: SENDER_EMAIL },
     to: subscription.email,
-    subject: `你关注的岗位新增 ${jobs.length} 条机会｜jobhub`,
+    subject: `有 ${jobs.length} 个新机会适合你｜jobhub`,
     headers: {
       "List-Unsubscribe": `<${oneClickUnsubscribeUrl}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     },
-    text: `你关注的岗位（${labels}）新增 ${jobs.length} 条机会。\n\n${plainRows}\n\n管理或退订：${unsubscribeUrl}`,
-    html: `<!doctype html><html><body style="margin:0;background:#f4f1e8;color:#20251f;font-family:Arial,'PingFang SC',sans-serif"><div style="max-width:640px;margin:0 auto;padding:36px 20px"><div style="background:#fffef9;border:1px solid #c9cec7;padding:30px"><p style="margin:0 0 10px;color:#21a65a;font-weight:700">jobhub 岗位提醒</p><h1 style="margin:0 0 12px;font-size:28px">你关注的岗位新增 ${jobs.length} 条机会</h1><p style="margin:0 0 22px;color:#687068;font-size:14px">关注岗位：${escapeHtml(labels)} · 以下展示最近 ${Math.min(jobs.length, 5)} 条</p>${rows}<a href="${APP_URL}/jobs" style="display:inline-block;margin-top:22px;padding:12px 18px;background:#b8ea45;color:#20251f;text-decoration:none;font-weight:700">查看全部机会</a><p style="margin:28px 0 0;color:#8a8f89;font-size:12px;line-height:1.7">你收到这封邮件，是因为你在 jobhub 订阅了岗位提醒。<a href="${unsubscribeUrl}" style="color:#687068">退订邮件</a></p></div></div></body></html>`,
+    text: `你关注的方向（${labels}）有 ${jobs.length} 个新机会。\n\n${plainRows}\n\n退订：${unsubscribeUrl}`,
+    html: `<!doctype html><html><body style="margin:0;background:#f4f1e8;color:#20251f;font-family:Arial,'PingFang SC',sans-serif"><div style="max-width:640px;margin:0 auto;padding:36px 20px"><div style="background:#fffef9;border:1px solid #c9cec7;padding:30px"><p style="margin:0 0 10px;color:#21a65a;font-weight:700">jobhub</p><h1 style="margin:0 0 12px;font-size:28px">有 ${jobs.length} 个新机会适合你</h1><p style="margin:0 0 22px;color:#687068;font-size:14px">方向：${escapeHtml(labels)} · 先看最近 ${Math.min(jobs.length, 5)} 条</p>${rows}<a href="${APP_URL}/jobs" style="display:inline-block;margin-top:22px;padding:12px 18px;background:#b8ea45;color:#20251f;text-decoration:none;font-weight:700">去看看</a><p style="margin:28px 0 0;color:#8a8f89;font-size:12px;line-height:1.7">你订阅了 jobhub 新机会提醒。<a href="${unsubscribeUrl}" style="color:#687068">退订</a></p></div></div></body></html>`,
   } satisfies EmailMessageBuilder;
 }
 

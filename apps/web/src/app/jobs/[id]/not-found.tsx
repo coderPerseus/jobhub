@@ -1,5 +1,14 @@
 import Link from "next/link";
 
 export default function JobNotFound() {
-  return <main className="not-found-page"><span>404</span><h1>这个工作机会不存在</h1><p>数据库中没有这条记录，或者链接有误。</p><Link className="button-primary" href="/jobs">返回工作机会</Link></main>;
+  return (
+    <main className="not-found-page">
+      <span>404</span>
+      <h1>这个机会不存在了</h1>
+      <p>链接可能失效，或者岗位已下线。</p>
+      <Link className="button-primary" href="/jobs">
+        看看其他机会
+      </Link>
+    </main>
+  );
 }
