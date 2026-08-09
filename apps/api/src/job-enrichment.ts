@@ -310,7 +310,7 @@ async function verifyTargets(
   messages.push(assistant);
 
   const evidence: Array<{ query: string; results: SearchResult[] }> = [];
-  for (const toolCall of assistant.tool_calls.slice(0, 4)) {
+  for (const [index, toolCall] of assistant.tool_calls.entries()) {
     let query = "";
     try {
       query = text(JSON.parse(toolCall.function.arguments).query, 300) ?? "";
@@ -318,12 +318,19 @@ async function verifyTargets(
       query = "";
     }
     const allowed = targets.some((target) => query.toLocaleLowerCase().includes(target.value.toLocaleLowerCase()));
-    const results = allowed && query ? await searchWeb(query, fetcher).catch(() => []) : [];
-    evidence.push({ query, results });
+    const withinLimit = index < 4;
+    const results = allowed && withinLimit && query ? await searchWeb(query, fetcher).catch(() => []) : [];
+    if (withinLimit) evidence.push({ query, results });
     messages.push({
       role: "tool",
       tool_call_id: toolCall.id,
-      content: JSON.stringify(allowed ? { query, results } : { query, error: "query rejected: target missing" }),
+      content: JSON.stringify(
+        !allowed
+          ? { query, error: "query rejected: target missing" }
+          : withinLimit
+            ? { query, results }
+            : { query, error: "query skipped: search limit reached" },
+      ),
     });
   }
 
