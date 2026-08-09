@@ -30,7 +30,7 @@ export type NormalizedJob = {
   contentType: string | null;
 };
 
-export type DetailTarget = Pick<NormalizedJob, "platform" | "platformPostId" | "contentType">;
+export type DetailTarget = Pick<NormalizedJob, "id" | "platform" | "platformPostId" | "contentType">;
 
 export type JobDetail = {
   title: string | null;
@@ -44,6 +44,16 @@ export type JobDetail = {
   reposts: number;
   views: number;
   imageUrl: string | null;
+  media: JobMedia[];
+};
+
+export type JobMedia = {
+  position: number;
+  mediaType: "image" | "video";
+  sourceUrl: string;
+  width: number | null;
+  height: number | null;
+  raw: JsonObject;
 };
 
 const TIKHUB_BASE_URL = "https://api.tikhub.io";
@@ -82,6 +92,27 @@ function excerpt(value: string, length = 220): string {
 function titleFromBody(body: string): string {
   const firstLine = body.split(/\n|[。！？.!?]\s/)[0]?.trim() ?? "";
   return excerpt(firstLine || body, 100) || "招聘机会";
+}
+
+function normalizeXhsMedia(note: JsonObject): JobMedia[] {
+  const contentType = string(note.type) === "video" ? "video" : "image";
+  return array(note.images_list ?? note.images).flatMap((value, position) => {
+    const image = object(value);
+    const sourceUrl = string(
+      image.original
+      ?? image.url_size_large
+      ?? image.url
+      ?? image.image_url,
+    );
+    return sourceUrl ? [{
+      position,
+      mediaType: contentType === "video" ? "video" as const : "image" as const,
+      sourceUrl,
+      width: number(image.width ?? object(image.origin_img).width) || null,
+      height: number(image.height ?? object(image.origin_img).height) || null,
+      raw: image,
+    }] : [];
+  });
 }
 
 function normalizeXhsItem(value: unknown): NormalizedJob | null {
@@ -191,6 +222,7 @@ export function parseDetailResponse(platform: Platform, payload: unknown): { det
         reposts: number(note.shared_count ?? note.share_count),
         views: number(note.view_count ?? note.views_count),
         imageUrl: string(firstImage.url_size_large ?? firstImage.url ?? firstImage.image_url) || null,
+        media: normalizeXhsMedia(note),
       },
     };
   }
@@ -216,6 +248,14 @@ export function parseDetailResponse(platform: Platform, payload: unknown): { det
       reposts: number(tweet.retweets ?? tweet.reposts),
       views: number(tweet.views),
       imageUrl: string(firstPhoto.media_url_https ?? firstPhoto.url) || null,
+      media: string(firstPhoto.media_url_https ?? firstPhoto.url) ? [{
+        position: 0,
+        mediaType: "image",
+        sourceUrl: string(firstPhoto.media_url_https ?? firstPhoto.url),
+        width: number(firstPhoto.width) || null,
+        height: number(firstPhoto.height) || null,
+        raw: firstPhoto,
+      }] : [],
     },
   };
 }

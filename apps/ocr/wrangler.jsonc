@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "jobhub-ocr",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-09",
+  "workers_dev": false,
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "head_sampling_rate": 1
+    }
+  }
+}

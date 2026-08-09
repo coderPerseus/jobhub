@@ -1,0 +1,19 @@
+{
+  "name": "@folk-job/ocr",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "cf:typegen": "wrangler types --env-interface CloudflareBindings worker-configuration.d.ts",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev --port 8788",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "4.1.10",
+    "wrangler": "4.120.0"
+  }
+}

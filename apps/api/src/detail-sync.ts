@@ -106,6 +106,21 @@ export async function syncJobDetails(db: D1Database, apiKey: string, jobs: Norma
           target.platform,
           target.platformPostId,
         ),
+        db.prepare("DELETE FROM job_media WHERE job_id = ?").bind(target.id),
+        ...detail.media.map((media) => db.prepare(
+          `INSERT INTO job_media
+            (job_id, position, media_type, source_url, width, height, raw_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(
+          target.id,
+          media.position,
+          media.mediaType,
+          media.sourceUrl,
+          media.width,
+          media.height,
+          JSON.stringify(media.raw),
+          now,
+        )),
       ];
     });
     if (statements.length) await db.batch(statements);

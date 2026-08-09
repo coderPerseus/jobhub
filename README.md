@@ -12,6 +12,9 @@ jobhub 聚合小红书与 X 上公开发布的招聘帖子，将散落在信息�
 - 保存搜索和详情接口的原始响应，便于审计与重新解析
 - 按平台帖子 ID 去重，避免重复请求详情
 - AI 提取公司、岗位、地点、薪资、经验、技能和投递方式
+- 小红书图文逐图 OCR，补齐正文中缺失的岗位信息
+- DeepSeek 内容审核；发现公司或可识别作者后才执行联网核验
+- Queue 异步处理、任务状态跟踪与岗位级去重
 - 内容哈希与断点续跑，未变化的帖子不会重复调用 AI
 - 过滤非互联网岗位、行业观点、个人求职和面试经验内容
 - 支持关键词、岗位分类、来源平台、时间范围、热度排序和分页
@@ -25,8 +28,11 @@ jobhub 聚合小红书与 X 上公开发布的招聘帖子，将散落在信息�
 | --- | --- |
 | Web | Next.js 16、React 19、OpenNext for Cloudflare |
 | API | Hono、Cloudflare Workers |
+| OCR | Cloudflare Workers AI、Gemma 4 Vision |
 | 契约 | oRPC contract-first |
 | 数据库 | Cloudflare D1 / SQLite |
+| 异步任务 | Cloudflare Queues |
+| 审核模型 | DeepSeek V4 Flash、Strict Function Calling |
 | 数据源 | TikHub API |
 | 包管理 | pnpm workspace |
 | 部署 | Wrangler、Cloudflare Custom Domains |
@@ -36,6 +42,7 @@ jobhub 聚合小红书与 X 上公开发布的招聘帖子，将散落在信息�
 ```text
 apps/
   api/                 Hono Worker、D1 migrations、抓取与结构化脚本
+  ocr/                 内部 OCR Worker，通过 Service Binding 调用
   web/                 Next.js 应用与 OpenNext Cloudflare 配置
 packages/
   contracts/           前后端共享的 oRPC 契约
@@ -69,6 +76,9 @@ pnpm dev
 | `INGEST_TOKEN` | 管理端数据写入鉴权 | Worker Secret / `.dev.vars` |
 | `NEW_API_KEY` | OpenAI-compatible 结构化模型 | Worker Secret / `.ai.vars` |
 | `NEW_API_BASE_URL` | Chat Completions endpoint | Wrangler vars / `.ai.vars` |
+| `DEEPSEEK_API_KEY` | DeepSeek 官方岗位审核与工具调用 | Worker Secret / `.dev.vars` |
+| `DEEPSEEK_BASE_URL` | DeepSeek Beta Chat Completions endpoint | Wrangler vars |
+| `DEEPSEEK_MODEL` | 审核模型，生产使用 `deepseek-v4-flash` | Wrangler vars |
 | `NEXT_PUBLIC_API_URL` | Web 调用的 API 地址 | Web 环境变量 |
 
 本地密钥文件已经加入 `.gitignore`。不要把密钥、抓取响应或生产数据库导出提交到仓库。
@@ -88,6 +98,10 @@ pnpm --filter @folk-job/api exec wrangler d1 migrations apply folk-job --remote
 - `job_detail_fetches`：帖子详情原始响应
 - `crawl_runs` / `crawl_run_states`：分页、游标和断点状态
 - `job_structured_details`：AI 提取的结构化职位字段
+- `job_media`：详情接口返回的全部图片及顺序
+- `job_ocr_results`：逐图 OCR 合并正文及原始响应
+- `job_ai_reviews`：内容审核、联网证据和发布建议
+- `job_enrichment_tasks`：队列任务状态、尝试次数与错误信息
 - `email_subscriptions`：邮箱、订阅状态与关注岗位
 - `email_notification_deliveries` / `email_notification_jobs`：邮件发送记录与岗位级去重
 
@@ -102,6 +116,9 @@ pnpm --filter @folk-job/api run structure:jobs
 
 # 抓取、结构化并通知订阅者
 pnpm --filter @folk-job/api run update:jobs
+
+# 从已有详情响应回填图片，并将未审核岗位加入异步队列
+pnpm --filter @folk-job/api run enrich:existing
 
 # 预览非互联网岗位清理结果；确认后再执行删除
 pnpm --filter @folk-job/api run prune:non-internet

@@ -4,7 +4,7 @@ import type { ContractRouterClient } from "@orpc/contract";
 import { appContract } from "@folk-job/contracts";
 import { describe, expect, it, vi } from "vitest";
 
-import app from "../src/index";
+import { app } from "../src/index";
 import { subscribe } from "../src/email-subscriptions";
 import { classifyInternetJob } from "../src/job-classification";
 import { parseDetailResponse } from "../src/tikhub";
@@ -165,6 +165,11 @@ describe("TikHub detail parsing", () => {
       authorName: "招聘方",
       sourceUrl: "https://www.xiaohongshu.com/explore/note-1",
       imageUrl: "https://example.com/image.jpg",
+      media: [{
+        position: 0,
+        mediaType: "image",
+        sourceUrl: "https://example.com/image.jpg",
+      }],
     });
   });
 

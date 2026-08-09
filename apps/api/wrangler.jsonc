@@ -19,11 +19,38 @@
       "remote": true
     }
   ],
+  "services": [
+    {
+      "binding": "OCR",
+      "service": "jobhub-ocr",
+      "remote": true
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "ENRICHMENT_QUEUE",
+        "queue": "jobhub-enrichment"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "jobhub-enrichment",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_concurrency": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "jobhub-enrichment-dlq"
+      }
+    ]
+  },
   "vars": {
-    "NEW_API_BASE_URL": "https://mediocre-new-api.midway.run/v1/chat/completions"
+    "NEW_API_BASE_URL": "https://mediocre-new-api.midway.run/v1/chat/completions",
+    "DEEPSEEK_BASE_URL": "https://api.deepseek.com/beta/chat/completions",
+    "DEEPSEEK_MODEL": "deepseek-v4-flash"
   },
   "secrets": {
-    "required": ["TIKHUB_API_KEY", "INGEST_TOKEN", "NEW_API_KEY"]
+    "required": ["TIKHUB_API_KEY", "INGEST_TOKEN", "NEW_API_KEY", "DEEPSEEK_API_KEY"]
   },
   "observability": {
     "enabled": true,

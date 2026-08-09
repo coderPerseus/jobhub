@@ -16,6 +16,9 @@
     "notify:subscribers": "node --env-file-if-exists=.dev.vars scripts/notify-subscribers.mjs",
     "update:jobs": "pnpm run crawl:internet-week && pnpm run structure:jobs",
     "reparse:details": "node --experimental-strip-types scripts/reparse-details.mjs",
+    "backfill:media": "node --experimental-strip-types scripts/backfill-media.mjs",
+    "enqueue:enrichment": "node --env-file-if-exists=.dev.vars scripts/enqueue-enrichment.mjs",
+    "enrich:existing": "pnpm run backfill:media && pnpm run enqueue:enrichment",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

@@ -12,9 +12,37 @@ import {
   unsubscribe,
 } from "./email-subscriptions";
 import { classifyInternetJob, jobCategoryIds } from "./job-classification";
+import { enrichJob } from "./job-enrichment";
 import { createRequest, parseResponse, type IngestInput, type Platform } from "./tikhub";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
+export { app };
+
+async function enqueueJobIds(env: CloudflareBindings, jobIds: string[]) {
+  const uniqueIds = [...new Set(jobIds)];
+  if (uniqueIds.length === 0) return 0;
+  const now = new Date().toISOString();
+  await env.DB.batch(uniqueIds.map((jobId) => env.DB.prepare(
+    `INSERT INTO job_enrichment_tasks
+      (job_id, status, queued_at, started_at, completed_at, attempts, last_error)
+     VALUES (?, 'queued', ?, NULL, NULL, 0, NULL)
+     ON CONFLICT(job_id) DO UPDATE SET status='queued', queued_at=excluded.queued_at,
+       started_at=NULL, completed_at=NULL, last_error=NULL`,
+  ).bind(jobId, now)));
+  try {
+    for (let start = 0; start < uniqueIds.length; start += 100) {
+      await env.ENRICHMENT_QUEUE.sendBatch(
+        uniqueIds.slice(start, start + 100).map((jobId) => ({ body: { jobId } })),
+      );
+    }
+  } catch (error) {
+    await env.DB.batch(uniqueIds.map((jobId) => env.DB.prepare(
+      "UPDATE job_enrichment_tasks SET status='failed', last_error=? WHERE job_id=?",
+    ).bind(error instanceof Error ? error.message : String(error), jobId)));
+    throw error;
+  }
+  return uniqueIds.length;
+}
 
 app.use(
   "/rpc/*",
@@ -90,8 +118,14 @@ app.get("/jobs", async (c) => {
       s.positions_json, s.work_location, s.work_mode, s.employment_type, s.salary,
       s.experience_requirement, s.education_requirement, s.skills_json, s.benefits_json,
       s.application_url, s.contact, s.application_deadline, s.summary AS structured_summary,
-      s.language, s.confidence, s.structured_at
-     FROM jobs j LEFT JOIN job_structured_details s ON s.job_id = j.id ${where}
+      s.language, s.confidence, s.structured_at,
+      o.status AS ocr_status, o.image_count AS ocr_image_count,
+      r.content_completeness, r.credibility_signal, r.factual_verification_status,
+      r.should_publish, r.risk_flags_json, r.reason AS review_reason, r.reviewed_at
+     FROM jobs j
+     LEFT JOIN job_structured_details s ON s.job_id = j.id
+     LEFT JOIN job_ocr_results o ON o.job_id = j.id
+     LEFT JOIN job_ai_reviews r ON r.job_id = j.id ${where}
      ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
   ).bind(...bindings, pageSize, (currentPage - 1) * pageSize).all();
 
@@ -114,8 +148,16 @@ async function findJob(db: D1Database, id: string) {
       s.positions_json, s.work_location, s.work_mode, s.employment_type, s.salary,
       s.experience_requirement, s.education_requirement, s.skills_json, s.benefits_json,
       s.application_url, s.contact, s.application_deadline, s.summary AS structured_summary,
-      s.language, s.confidence, s.structured_at
-     FROM jobs j LEFT JOIN job_structured_details s ON s.job_id = j.id WHERE j.id = ?`,
+      s.language, s.confidence, s.structured_at,
+      o.status AS ocr_status, o.image_count AS ocr_image_count, o.combined_text AS ocr_text,
+      r.content_completeness, r.credibility_signal, r.factual_verification_status,
+      r.should_publish, r.risk_flags_json, r.missing_fields_json,
+      r.reason AS review_reason, r.search_evidence_json, r.reviewed_at
+     FROM jobs j
+     LEFT JOIN job_structured_details s ON s.job_id = j.id
+     LEFT JOIN job_ocr_results o ON o.job_id = j.id
+     LEFT JOIN job_ai_reviews r ON r.job_id = j.id
+     WHERE j.id = ?`,
   ).bind(id).first();
 }
 
@@ -197,6 +239,33 @@ app.post("/admin/notifications/dispatch", async (c) => {
   }
   const result = await dispatchJobNotifications(c.env.DB, c.env.EMAIL);
   return c.json(result);
+});
+
+app.post("/admin/enrichment/enqueue", async (c) => {
+  const authorization = c.req.header("Authorization");
+  if (!c.env.INGEST_TOKEN || authorization !== `Bearer ${c.env.INGEST_TOKEN}`) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  let input: { limit?: unknown; force?: unknown; jobId?: unknown } = {};
+  try {
+    input = await c.req.json();
+  } catch {
+    // An empty body uses the safe defaults below.
+  }
+  const limit = Math.min(Math.max(Number(input.limit ?? 100), 1), 500);
+  const force = input.force === true;
+  const jobId = typeof input.jobId === "string" && input.jobId.trim() ? input.jobId.trim() : null;
+  const result = jobId
+    ? await c.env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind(jobId).all<{ id: string }>()
+    : await c.env.DB.prepare(
+      `SELECT j.id FROM jobs j
+       LEFT JOIN job_ai_reviews r ON r.job_id = j.id
+       LEFT JOIN job_enrichment_tasks t ON t.job_id = j.id
+       WHERE (? = 1 OR (r.job_id IS NULL AND t.job_id IS NULL))
+       ORDER BY j.published_at DESC LIMIT ?`,
+    ).bind(force ? 1 : 0, limit).all<{ id: string }>();
+  const queued = await enqueueJobIds(c.env, result.results.map((job) => job.id));
+  return c.json({ queued, force });
 });
 
 app.post("/admin/ingest/tikhub", async (c) => {
@@ -308,6 +377,19 @@ app.post("/admin/ingest/tikhub", async (c) => {
 
   if (statements.length) await c.env.DB.batch(statements);
   const details = await syncJobDetails(c.env.DB, c.env.TIKHUB_API_KEY, acceptedJobs);
+  const newJobs = acceptedJobs.filter((job) => job.id).map((job) => job.id);
+  if (newJobs.length) {
+    const placeholders = newJobs.map(() => "?").join(", ");
+    const pending = await c.env.DB.prepare(
+      `SELECT j.id FROM jobs j
+       LEFT JOIN job_ai_reviews r ON r.job_id = j.id
+       LEFT JOIN job_enrichment_tasks t ON t.job_id = j.id
+       WHERE j.id IN (${placeholders}) AND r.job_id IS NULL AND t.job_id IS NULL`,
+    ).bind(...newJobs).all<{ id: string }>();
+    if (pending.results.length) {
+      await enqueueJobIds(c.env, pending.results.map((job) => job.id));
+    }
+  }
   const total = await c.env.DB.prepare(
     "SELECT COUNT(*) AS count FROM jobs WHERE platform = ?",
   ).bind(input.platform as Platform).first<{ count: number }>();
@@ -363,4 +445,36 @@ app.use("/rpc/*", async (c, next) => {
 
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch<{ jobId: string }>, env: CloudflareBindings) {
+    await Promise.all(batch.messages.map(async (message) => {
+      try {
+        const startedAt = new Date().toISOString();
+        await env.DB.prepare(
+          `INSERT INTO job_enrichment_tasks
+            (job_id, status, queued_at, started_at, completed_at, attempts, last_error)
+           VALUES (?, 'processing', ?, ?, NULL, 1, NULL)
+           ON CONFLICT(job_id) DO UPDATE SET status='processing', started_at=excluded.started_at,
+             completed_at=NULL, attempts=job_enrichment_tasks.attempts+1, last_error=NULL`,
+        ).bind(message.body.jobId, startedAt, startedAt).run();
+        const result = await enrichJob(env, message.body.jobId);
+        await env.DB.prepare(
+          "UPDATE job_enrichment_tasks SET status='completed', completed_at=?, last_error=NULL WHERE job_id=?",
+        ).bind(new Date().toISOString(), message.body.jobId).run();
+        console.log(JSON.stringify({ message: "Job enrichment completed", ...result }));
+        message.ack();
+      } catch (error) {
+        await env.DB.prepare(
+          "UPDATE job_enrichment_tasks SET status='failed', last_error=? WHERE job_id=?",
+        ).bind(error instanceof Error ? error.message : String(error), message.body.jobId).run();
+        console.error(JSON.stringify({
+          message: "Job enrichment failed",
+          jobId: message.body.jobId,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+        message.retry();
+      }
+    }));
+  },
+};
