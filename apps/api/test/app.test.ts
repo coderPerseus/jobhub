@@ -5,6 +5,7 @@ import { appContract } from "@folk-job/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 import app from "../src/index";
+import { subscribe } from "../src/email-subscriptions";
 import { classifyInternetJob } from "../src/job-classification";
 import { parseDetailResponse } from "../src/tikhub";
 
@@ -97,6 +98,44 @@ describe("API", () => {
     expect(rowsBind).toHaveBeenCalledWith("frontend", "backend", 100, 100);
     expect(prepare.mock.calls.every(([statement]) => statement.includes("LEFT JOIN job_structured_details"))).toBe(true);
     expect(prepare.mock.calls.some(([statement]) => statement.includes("s.company_name"))).toBe(true);
+  });
+
+  it("rejects an email subscription without a selected job category", async () => {
+    const response = await app.request(
+      "http://localhost/subscriptions",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "reader@example.com", categories: [] }),
+      },
+      {} as CloudflareBindings,
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "请至少选择一个岗位" });
+  });
+
+  it("stores a pending subscription and sends a confirmation email", async () => {
+    const run = vi.fn().mockResolvedValue({ meta: { changes: 1 } });
+    const first = vi.fn().mockResolvedValue(null);
+    const prepare = vi.fn((statement: string) => ({
+      bind: vi.fn(() => statement.includes("SELECT id, email") ? { first } : { run }),
+    }));
+    const send = vi.fn().mockResolvedValue({ messageId: "message-1" });
+
+    const result = await subscribe(
+      { prepare } as unknown as D1Database,
+      { send } as SendEmail,
+      { email: "Reader@Example.com", categories: ["frontend", "ai"] },
+    );
+
+    expect(result).toMatchObject({ ok: true, status: 202 });
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0][0]).toMatchObject({
+      to: "reader@example.com",
+      subject: "确认你的 jobhub 岗位订阅",
+    });
+    expect(prepare.mock.calls.some(([statement]) => statement.includes("INSERT INTO email_subscriptions"))).toBe(true);
   });
 });
 

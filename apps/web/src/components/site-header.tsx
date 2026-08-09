@@ -6,6 +6,7 @@ export function SiteHeader() {
       <Link className="wordmark" href="/" aria-label="jobhub 首页"><img alt="" height="36" src="/brand/jobhub-logo.png" width="36" /><span>jobhub</span></Link>
       <nav aria-label="主导航">
         <Link href="/jobs">最新机会</Link>
+        <Link href="/#alerts">邮件订阅</Link>
         <Link href="/#sources">平台来源</Link>
         <Link href="/#about">关于我们</Link>
       </nav>

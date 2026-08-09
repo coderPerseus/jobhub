@@ -207,4 +207,16 @@ for (let index = 0; index < batches.length; index += CONCURRENCY) {
 
 const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 12);
 console.log(JSON.stringify({ done: true, completed, failed, promptHash, model: MODEL, schemaVersion: SCHEMA_VERSION }));
+if (process.env.INGEST_TOKEN) {
+  const apiUrl = (process.env.API_URL ?? "https://folk-job-api.snailrun160.workers.dev").replace(/\/$/, "");
+  const response = await fetch(`${apiUrl}/admin/notifications/dispatch`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.INGEST_TOKEN}` },
+  });
+  const notificationResult = await response.json();
+  if (!response.ok) throw new Error(`Notification dispatch failed (${response.status}): ${JSON.stringify(notificationResult)}`);
+  console.log(JSON.stringify({ notifications: notificationResult }));
+} else {
+  console.warn(JSON.stringify({ message: "INGEST_TOKEN is missing; skipped subscriber notifications" }));
+}
 if (failed) process.exitCode = 1;

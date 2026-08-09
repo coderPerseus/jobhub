@@ -15,6 +15,7 @@ jobhub 聚合小红书与 X 上公开发布的招聘帖子，将散落在信息�
 - 内容哈希与断点续跑，未变化的帖子不会重复调用 AI
 - 过滤非互联网岗位、行业观点、个人求职和面试经验内容
 - 支持关键词、岗位分类、来源平台、时间范围、热度排序和分页
+- 支持按岗位订阅邮件提醒，新机会入库后发送去重摘要
 - 独立职位详情页与来源原帖跳转
 - Sitemap、robots.txt、Open Graph、canonical 和 JobPosting JSON-LD
 
@@ -87,6 +88,8 @@ pnpm --filter @folk-job/api exec wrangler d1 migrations apply folk-job --remote
 - `job_detail_fetches`：帖子详情原始响应
 - `crawl_runs` / `crawl_run_states`：分页、游标和断点状态
 - `job_structured_details`：AI 提取的结构化职位字段
+- `email_subscriptions`：邮箱、订阅状态与关注岗位
+- `email_notification_deliveries` / `email_notification_jobs`：邮件发送记录与岗位级去重
 
 ## 数据任务
 
@@ -96,6 +99,9 @@ pnpm --filter @folk-job/api run crawl:internet-week
 
 # 为未处理或正文发生变化的职位提取结构化字段
 pnpm --filter @folk-job/api run structure:jobs
+
+# 抓取、结构化并通知订阅者
+pnpm --filter @folk-job/api run update:jobs
 
 # 预览非互联网岗位清理结果；确认后再执行删除
 pnpm --filter @folk-job/api run prune:non-internet

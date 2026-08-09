@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { JobCard } from "../components/job-card";
+import { JobAlertSignup } from "../components/job-alert-signup";
 import { SiteHeader } from "../components/site-header";
 import { PlatformIcon } from "../components/platform-icon";
 import { getJobs } from "../lib/jobs";
@@ -81,6 +82,10 @@ export default async function Home() {
           <article><span>↻</span><div><strong>每日更新</strong><p>持续追踪新的招聘信号</p></div></article>
           <article><span>▽</span><div><strong>去重聚合</strong><p>相同机会只需要看一次</p></div></article>
         </div>
+      </section>
+
+      <section className="alert-section page-shell" id="alerts">
+        <JobAlertSignup />
       </section>
 
       <section className="landing-cta page-shell" id="about">

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { SiteHeader } from "../../components/site-header";
+import { JobAlertSignup } from "../../components/job-alert-signup";
 import { getJobs, type JobCategory, type JobSort, type Platform, type TimeRange } from "../../lib/jobs";
 import { JobExplorer } from "./job-explorer";
 
@@ -41,6 +42,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         <p>AI 提取公司、岗位、地点与投递方式。<br />原帖去重 · 信息结构化 · 来源可追溯</p>
       </section>
       <JobExplorer filters={{ query, categories: selectedCategories, platforms, timeRange, sort }} result={result} />
+      <section className="alert-section alert-section-jobs page-shell" id="alerts"><JobAlertSignup compact /></section>
       <footer className="site-footer"><div className="page-shell"><strong>jobhub</strong><span>公开信息聚合 · 请以原帖信息为准</span></div></footer>
     </main>
   );

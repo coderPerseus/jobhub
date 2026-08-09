@@ -13,6 +13,8 @@
     "crawl:internet-week": "node --experimental-strip-types --env-file=.dev.vars scripts/crawl-internet-week.mjs",
     "prune:non-internet": "node --experimental-strip-types scripts/prune-non-internet-jobs.mjs",
     "structure:jobs": "node --env-file-if-exists=.dev.vars --env-file-if-exists=.ai.vars scripts/structure-jobs.mjs",
+    "notify:subscribers": "node --env-file-if-exists=.dev.vars scripts/notify-subscribers.mjs",
+    "update:jobs": "pnpm run crawl:internet-week && pnpm run structure:jobs",
     "reparse:details": "node --experimental-strip-types scripts/reparse-details.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

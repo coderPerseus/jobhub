@@ -5,7 +5,13 @@ import { cors } from "hono/cors";
 
 import { router } from "./router";
 import { syncJobDetails } from "./detail-sync";
-import { jobCategoryIds } from "./job-classification";
+import {
+  confirmSubscription,
+  dispatchJobNotifications,
+  subscribe,
+  unsubscribe,
+} from "./email-subscriptions";
+import { classifyInternetJob, jobCategoryIds } from "./job-classification";
 import { createRequest, parseResponse, type IngestInput, type Platform } from "./tikhub";
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
@@ -137,6 +143,62 @@ app.get("/stats", async (c) => {
   return c.json({ jobs: counts.results, batches });
 });
 
+app.post("/subscriptions", async (c) => {
+  let input: { email?: unknown; categories?: unknown };
+  try {
+    input = await c.req.json();
+  } catch {
+    return c.json({ error: "请求格式无效" }, 400);
+  }
+
+  try {
+    const result = await subscribe(c.env.DB, c.env.EMAIL, input);
+    if (!result.ok) return c.json({ error: result.error }, result.status as 400);
+    return c.json({ message: result.message }, 202);
+  } catch (error) {
+    console.error(JSON.stringify({
+      error: error instanceof Error ? error.message : String(error),
+      message: "Failed to create email subscription",
+    }));
+    return c.json({ error: "暂时无法发送确认邮件，请稍后重试" }, 503);
+  }
+});
+
+app.post("/subscriptions/confirm", async (c) => {
+  let input: { token?: unknown };
+  try {
+    input = await c.req.json();
+  } catch {
+    return c.json({ error: "请求格式无效" }, 400);
+  }
+  const confirmed = await confirmSubscription(c.env.DB, input.token);
+  return confirmed
+    ? c.json({ message: "订阅已确认" })
+    : c.json({ error: "确认链接无效或已经使用" }, 400);
+});
+
+app.post("/subscriptions/unsubscribe", async (c) => {
+  let input: { token?: unknown };
+  try {
+    input = await c.req.json();
+  } catch {
+    input = { token: c.req.query("token") };
+  }
+  const removed = await unsubscribe(c.env.DB, input.token ?? c.req.query("token"));
+  return removed
+    ? c.json({ message: "邮件提醒已退订" })
+    : c.json({ error: "退订链接无效或已失效" }, 400);
+});
+
+app.post("/admin/notifications/dispatch", async (c) => {
+  const authorization = c.req.header("Authorization");
+  if (!c.env.INGEST_TOKEN || authorization !== `Bearer ${c.env.INGEST_TOKEN}`) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  const result = await dispatchJobNotifications(c.env.DB, c.env.EMAIL);
+  return c.json(result);
+});
+
 app.post("/admin/ingest/tikhub", async (c) => {
   const authorization = c.req.header("Authorization");
   if (!c.env.INGEST_TOKEN || authorization !== `Bearer ${c.env.INGEST_TOKEN}`) {
@@ -169,10 +231,15 @@ app.post("/admin/ingest/tikhub", async (c) => {
   const recruitmentPattern = input.platform === "XHS"
     ? /(招聘|招人|急聘|诚聘|招募|岗位|内推|加入我们|招聘启事|招聘信息)/i
     : /(we(?:'|’)re hiring|we are hiring|hiring for|job opening|open role|open position|vacanc(?:y|ies)|join our team|now hiring|apply for|recruiting)/i;
-  const acceptedJobs = parsed.jobs.filter((job) =>
-    new Date(job.publishedAt).valueOf() >= cutoff
-    && recruitmentPattern.test(`${job.title}\n${job.body}`),
-  );
+  const acceptedJobs = parsed.jobs.flatMap((job) => {
+    const text = `${job.title}\n${job.body}`;
+    const category = classifyInternetJob(text);
+    return new Date(job.publishedAt).valueOf() >= cutoff
+      && recruitmentPattern.test(text)
+      && category
+      ? [{ ...job, category }]
+      : [];
+  });
   const pageCursor = input.platform === "XHS"
     ? String(input.page ?? 1)
     : input.cursor ?? null;
@@ -197,8 +264,8 @@ app.post("/admin/ingest/tikhub", async (c) => {
     `INSERT INTO jobs
       (id, platform, platform_post_id, title, body, excerpt, author_name, author_handle,
        source_url, published_at, first_seen_at, last_seen_at, likes, comments, reposts,
-       views, image_url, raw_batch_id, content_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       views, image_url, raw_batch_id, content_type, category)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (platform, platform_post_id) DO UPDATE SET
        title = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.title ELSE jobs.title END,
        body = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.body ELSE jobs.body END,
@@ -214,7 +281,8 @@ app.post("/admin/ingest/tikhub", async (c) => {
        views = excluded.views,
        image_url = CASE WHEN jobs.detail_fetched_at IS NULL THEN excluded.image_url ELSE jobs.image_url END,
        raw_batch_id = excluded.raw_batch_id,
-       content_type = excluded.content_type`,
+       content_type = excluded.content_type,
+       category = COALESCE(jobs.category, excluded.category)`,
   ).bind(
     job.id,
     job.platform,
@@ -235,6 +303,7 @@ app.post("/admin/ingest/tikhub", async (c) => {
     job.imageUrl,
     batch.id,
     job.contentType,
+    job.category,
   ));
 
   if (statements.length) await c.env.DB.batch(statements);
@@ -242,6 +311,17 @@ app.post("/admin/ingest/tikhub", async (c) => {
   const total = await c.env.DB.prepare(
     "SELECT COUNT(*) AS count FROM jobs WHERE platform = ?",
   ).bind(input.platform as Platform).first<{ count: number }>();
+
+  c.executionCtx.waitUntil(
+    dispatchJobNotifications(c.env.DB, c.env.EMAIL).then((notificationResult) => {
+      console.log(JSON.stringify({ message: "Job notifications dispatched", ...notificationResult }));
+    }).catch((error) => {
+      console.error(JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+        message: "Job notification dispatch failed",
+      }));
+    }),
+  );
 
   return c.json({
     batchId: batch.id,

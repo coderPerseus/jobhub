@@ -12,6 +12,13 @@
       "remote": true
     }
   ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": ["jobhub@islumi.com"],
+      "remote": true
+    }
+  ],
   "vars": {
     "NEW_API_BASE_URL": "https://mediocre-new-api.midway.run/v1/chat/completions"
   },
