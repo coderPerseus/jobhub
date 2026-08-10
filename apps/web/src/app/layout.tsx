@@ -42,7 +42,14 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
 };
 
-export const viewport: Viewport = { themeColor: "#31d276", colorScheme: "light" };
+export const viewport: Viewport = {
+  themeColor: "#31d276",
+  colorScheme: "light",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+};
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (

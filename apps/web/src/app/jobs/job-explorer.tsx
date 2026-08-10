@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 
 import { JobCard } from "../../components/job-card";
 import { PlatformIcon } from "../../components/platform-icon";
@@ -38,14 +38,37 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
   const router = useRouter();
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(filters.query);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const filtersId = useId();
+  const filtersToggleRef = useRef<HTMLButtonElement>(null);
+  const filtersCloseRef = useRef<HTMLButtonElement>(null);
 
-  const hasActiveFilters =
-    Boolean(filters.query) ||
-    filters.categories.length > 0 ||
-    filters.platforms.length > 0 ||
-    filters.timeRange !== "7d" ||
-    filters.sort !== "latest";
+  const selectedFilterCount =
+    filters.categories.length +
+    filters.platforms.length +
+    (filters.timeRange !== "7d" ? 1 : 0);
+
+  const hasActiveFilters = Boolean(filters.query) || selectedFilterCount > 0 || filters.sort !== "latest";
+
+  const closeFilters = () => {
+    setFiltersOpen(false);
+    requestAnimationFrame(() => filtersToggleRef.current?.focus());
+  };
+
+  useEffect(() => {
+    if (!filtersOpen) return;
+    filtersCloseRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeFilters();
+    };
+    document.addEventListener("keydown", onKey);
+    document.body.classList.add("filters-drawer-open");
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.classList.remove("filters-drawer-open");
+    };
+  }, [filtersOpen]);
 
   const navigate = (changes: Record<string, string | null>, resetPage = true) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -104,83 +127,89 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
     activeChips.push({ key: "sort", label: "最热", clear: () => navigate({ sort: null }) });
   }
 
+  const renderFilterPanel = (instance: "desktop" | "drawer") => (
+    <>
+      <div className="filter-block">
+        <h2>岗位方向</h2>
+        <div className="filter-chip-list">
+          {categoryOptions.map(([value, label]) => {
+            const active = filters.categories.includes(value);
+            return (
+              <button
+                aria-pressed={active}
+                className={`filter-chip${active ? " is-active" : ""}`}
+                key={value}
+                onClick={() => toggle(value, filters.categories, "category")}
+                type="button"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="filter-block">
+        <h2>来自</h2>
+        <div className="filter-option-list">
+          {platformOptions.map((option) => {
+            const active = filters.platforms.includes(option.value);
+            return (
+              <button
+                aria-pressed={active}
+                className={`filter-option${active ? " is-active" : ""}`}
+                key={option.value}
+                onClick={() => toggle(option.value, filters.platforms, "platform")}
+                type="button"
+              >
+                <span className="filter-check" aria-hidden="true" />
+                <span className="filter-platform">
+                  <PlatformIcon platform={option.value} size={16} />
+                  {option.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <fieldset className="filter-block">
+        <legend>发布时间</legend>
+        <div className="filter-option-list">
+          {timeOptions.map((option) => {
+            const active = filters.timeRange === option.value;
+            return (
+              <label
+                className={`filter-option filter-option-radio${active ? " is-active" : ""}`}
+                key={option.value}
+              >
+                <input
+                  checked={active}
+                  name={`time-${instance}`}
+                  onChange={() => navigate({ time: option.value === "7d" ? null : option.value })}
+                  type="radio"
+                  value={option.value}
+                />
+                <span className="filter-radio" aria-hidden="true" />
+                <span>{option.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+
+      {hasActiveFilters && (
+        <button className="reset-button" onClick={clearAll} type="button">
+          清除筛选
+        </button>
+      )}
+    </>
+  );
+
   return (
     <section className={`explorer page-shell${isPending ? " is-loading" : ""}`}>
-      <aside className="filters" aria-label="筛选">
-        <div className="filter-block">
-          <h2>岗位方向</h2>
-          <div className="filter-chip-list">
-            {categoryOptions.map(([value, label]) => {
-              const active = filters.categories.includes(value);
-              return (
-                <button
-                  aria-pressed={active}
-                  className={`filter-chip${active ? " is-active" : ""}`}
-                  key={value}
-                  onClick={() => toggle(value, filters.categories, "category")}
-                  type="button"
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="filter-block">
-          <h2>来自</h2>
-          <div className="filter-option-list">
-            {platformOptions.map((option) => {
-              const active = filters.platforms.includes(option.value);
-              return (
-                <button
-                  aria-pressed={active}
-                  className={`filter-option${active ? " is-active" : ""}`}
-                  key={option.value}
-                  onClick={() => toggle(option.value, filters.platforms, "platform")}
-                  type="button"
-                >
-                  <span className="filter-check" aria-hidden="true" />
-                  <span className="filter-platform">
-                    <PlatformIcon platform={option.value} size={16} />
-                    {option.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <fieldset className="filter-block">
-          <legend>发布时间</legend>
-          <div className="filter-option-list">
-            {timeOptions.map((option) => {
-              const active = filters.timeRange === option.value;
-              return (
-                <label
-                  className={`filter-option filter-option-radio${active ? " is-active" : ""}`}
-                  key={option.value}
-                >
-                  <input
-                    checked={active}
-                    name="time"
-                    onChange={() => navigate({ time: option.value === "7d" ? null : option.value })}
-                    type="radio"
-                    value={option.value}
-                  />
-                  <span className="filter-radio" aria-hidden="true" />
-                  <span>{option.label}</span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-
-        {hasActiveFilters && (
-          <button className="reset-button" onClick={clearAll} type="button">
-            清除筛选
-          </button>
-        )}
+      <aside className="filters filters-desktop" aria-label="筛选">
+        {renderFilterPanel("desktop")}
       </aside>
 
       <div className="job-results">
@@ -197,24 +226,38 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
             </span>
             <input
               aria-label="搜索职位"
+              enterKeyHint="search"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索职位、公司或关键词"
               value={query}
             />
             <button type="submit">搜索</button>
           </form>
-          <div className="result-sort">
-            <label className="sr-only" htmlFor="job-sort">
-              排序
-            </label>
-            <select
-              id="job-sort"
-              onChange={(event) => navigate({ sort: event.target.value === "popular" ? "popular" : null })}
-              value={filters.sort}
+          <div className="result-toolbar-side">
+            <button
+              aria-controls={filtersId}
+              aria-expanded={filtersOpen}
+              className={`filters-toggle${selectedFilterCount > 0 ? " has-active" : ""}`}
+              onClick={() => setFiltersOpen(true)}
+              ref={filtersToggleRef}
+              type="button"
             >
-              <option value="latest">最新</option>
-              <option value="popular">最热</option>
-            </select>
+              筛选
+              {selectedFilterCount > 0 && <span className="filters-toggle-count">{selectedFilterCount}</span>}
+            </button>
+            <div className="result-sort">
+              <label className="sr-only" htmlFor="job-sort">
+                排序
+              </label>
+              <select
+                id="job-sort"
+                onChange={(event) => navigate({ sort: event.target.value === "popular" ? "popular" : null })}
+                value={filters.sort}
+              >
+                <option value="latest">最新</option>
+                <option value="popular">最热</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -288,6 +331,31 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
             </button>
           </nav>
         )}
+      </div>
+
+      <div
+        aria-hidden={!filtersOpen}
+        aria-modal="true"
+        className={`filters-drawer${filtersOpen ? " is-open" : ""}`}
+        id={filtersId}
+        role="dialog"
+        aria-label="筛选条件"
+      >
+        <div className="filters-drawer-panel">
+          <div className="filters-drawer-head">
+            <h2>筛选</h2>
+            <button className="filters-drawer-close" onClick={closeFilters} ref={filtersCloseRef} type="button">
+              完成
+            </button>
+          </div>
+          <div className="filters-drawer-body">{renderFilterPanel("drawer")}</div>
+        </div>
+        <button
+          aria-label="关闭筛选"
+          className="filters-drawer-backdrop"
+          onClick={closeFilters}
+          type="button"
+        />
       </div>
     </section>
   );
