@@ -171,6 +171,10 @@ img, svg { max-width: 100%; height: auto; }
   align-items: center;
   padding-block: 64px 56px;
 }
+.hero-copy,
+.hero-preview {
+  min-width: 0;
+}
 .kicker {
   display: flex;
   align-items: center;
@@ -1578,7 +1582,7 @@ img, svg { max-width: 100%; height: auto; }
     width: min(100% - 36px, 960px);
   }
   .landing-hero {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 36px;
     min-height: auto;
     padding-block: 48px 40px;
@@ -1837,6 +1841,7 @@ img, svg { max-width: 100%; height: auto; }
   .hero-preview {
     min-height: 0;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 10px;
     max-width: none;
   }
