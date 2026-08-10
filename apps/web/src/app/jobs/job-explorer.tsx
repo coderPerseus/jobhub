@@ -3,7 +3,6 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 
-import { JobCard } from "../../components/job-card";
 import { PlatformIcon } from "../../components/platform-icon";
 import {
   categoryLabels,
@@ -13,6 +12,7 @@ import {
   type Platform,
   type TimeRange,
 } from "../../lib/jobs";
+import { JobTable } from "./job-table";
 
 const categoryOptions = Object.entries(categoryLabels) as [JobCategory, string][];
 const platformOptions: { label: string; value: Platform }[] = [
@@ -206,14 +206,18 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
     </>
   );
 
+  const categorySummary = filters.categories.length
+    ? filters.categories.map((value) => categoryLabels[value]).join("、")
+    : "全部方向";
+  const platformSummary = filters.platforms.length
+    ? filters.platforms.map((value) => value === "XHS" ? "小红书" : "X").join("、")
+    : "全部来源";
+  const timeSummary = timeOptions.find((item) => item.value === filters.timeRange)?.label ?? "最近 7 天";
+
   return (
     <section className={`explorer page-shell${isPending ? " is-loading" : ""}`}>
-      <aside className="filters filters-desktop" aria-label="筛选">
-        {renderFilterPanel("desktop")}
-      </aside>
-
       <div className="job-results">
-        <div className="result-toolbar">
+        <div className="job-filter-panel filters-desktop" aria-label="筛选">
           <form
             className="result-search"
             onSubmit={(event) => {
@@ -224,6 +228,105 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
             <span aria-hidden="true" className="result-search-icon">
               ⌕
             </span>
+            <input
+              aria-label="搜索职位"
+              enterKeyHint="search"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索职位、公司或关键词"
+              value={query}
+            />
+            <button type="submit">搜索</button>
+          </form>
+
+          <details className="filter-menu">
+            <summary>
+              <small>岗位方向</small>
+              <span>{categorySummary}</span>
+            </summary>
+            <div className="filter-menu-panel filter-menu-categories">
+              {categoryOptions.map(([value, label]) => {
+                const active = filters.categories.includes(value);
+                return (
+                  <button
+                    aria-pressed={active}
+                    className={`filter-chip${active ? " is-active" : ""}`}
+                    key={value}
+                    onClick={() => toggle(value, filters.categories, "category")}
+                    type="button"
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+
+          <details className="filter-menu">
+            <summary>
+              <small>信息来源</small>
+              <span>{platformSummary}</span>
+            </summary>
+            <div className="filter-menu-panel">
+              {platformOptions.map((option) => {
+                const active = filters.platforms.includes(option.value);
+                return (
+                  <button
+                    aria-pressed={active}
+                    className={`filter-option${active ? " is-active" : ""}`}
+                    key={option.value}
+                    onClick={() => toggle(option.value, filters.platforms, "platform")}
+                    type="button"
+                  >
+                    <span className="filter-check" aria-hidden="true" />
+                    <span className="filter-platform">
+                      <PlatformIcon platform={option.value} size={16} />
+                      {option.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </details>
+
+          <details className="filter-menu">
+            <summary>
+              <small>发布时间</small>
+              <span>{timeSummary}</span>
+            </summary>
+            <div className="filter-menu-panel">
+              {timeOptions.map((option) => {
+                const active = filters.timeRange === option.value;
+                return (
+                  <label className={`filter-option filter-option-radio${active ? " is-active" : ""}`} key={option.value}>
+                    <input
+                      checked={active}
+                      name="time-desktop"
+                      onChange={() => navigate({ time: option.value === "7d" ? null : option.value })}
+                      type="radio"
+                      value={option.value}
+                    />
+                    <span className="filter-radio" aria-hidden="true" />
+                    <span>{option.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+
+          {hasActiveFilters && (
+            <button className="filter-clear" onClick={clearAll} type="button">清除</button>
+          )}
+        </div>
+
+        <div className="result-toolbar result-toolbar-mobile">
+          <form
+            className="result-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              navigate({ q: query.trim() || null });
+            }}
+          >
+            <span aria-hidden="true" className="result-search-icon">⌕</span>
             <input
               aria-label="搜索职位"
               enterKeyHint="search"
@@ -262,31 +365,40 @@ export function JobExplorer({ filters, result }: { filters: Filters; result: Job
         </div>
 
         <div className="result-meta">
-          <div className="result-count">
-            <strong>{result.total.toLocaleString("zh-CN")}</strong>
-            <span> 个机会</span>
-            {result.total > 0 && result.totalPages > 1 && (
-              <span className="result-page-hint">
-                · 第 {result.page} / {result.totalPages} 页
-              </span>
+          <div className="result-meta-main">
+            <div className="result-count">
+              <strong>{result.total.toLocaleString("zh-CN")}</strong>
+              <span> 个机会</span>
+              {result.total > 0 && result.totalPages > 1 && (
+                <span className="result-page-hint">· 第 {result.page} / {result.totalPages} 页</span>
+              )}
+            </div>
+            {activeChips.length > 0 && (
+              <div className="active-filters" aria-label="已选条件">
+                {activeChips.map((chip) => (
+                  <button className="active-filter-chip" key={chip.key} onClick={chip.clear} type="button">
+                    {chip.label}
+                    <span aria-hidden="true">×</span>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-          {activeChips.length > 0 && (
-            <div className="active-filters" aria-label="已选条件">
-              {activeChips.map((chip) => (
-                <button className="active-filter-chip" key={chip.key} onClick={chip.clear} type="button">
-                  {chip.label}
-                  <span aria-hidden="true">×</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="result-sort result-sort-desktop">
+            <label htmlFor="job-sort-desktop">排序</label>
+            <select
+              id="job-sort-desktop"
+              onChange={(event) => navigate({ sort: event.target.value === "popular" ? "popular" : null })}
+              value={filters.sort}
+            >
+              <option value="latest">推荐排序</option>
+              <option value="popular">最热优先</option>
+            </select>
+          </div>
         </div>
 
         <div className="job-list">
-          {result.jobs.map((job) => (
-            <JobCard job={job} key={job.id} />
-          ))}
+          {result.jobs.length > 0 && <JobTable jobs={result.jobs} />}
           {result.jobs.length === 0 && (
             <div className="empty-state">
               <span aria-hidden="true">⌕</span>
