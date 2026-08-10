@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { JobTrustPanel } from "../../../components/job-trust";
 import { PlatformIcon } from "../../../components/platform-icon";
 import { SiteHeader } from "../../../components/site-header";
 import { getJob } from "../../../lib/jobs";
@@ -122,14 +123,14 @@ export default async function JobDetailPage({ params }: PageProps<"/jobs/[id]">)
 
             {job.excerpt && (
               <section className="detail-section">
-                <p className="section-label">岗位简介</p>
+                <p className="section-label">简介</p>
                 <p className="detail-lead">{job.excerpt}</p>
               </section>
             )}
 
             {(facts.length > 0 || job.positions.length > 1 || job.skills.length > 0) && (
               <section className="detail-section structured-section">
-                <p className="section-label">岗位信息</p>
+                <p className="section-label">信息</p>
                 {facts.length > 0 && (
                   <dl className="structured-grid">
                     {facts.map((fact) => (
@@ -152,7 +153,7 @@ export default async function JobDetailPage({ params }: PageProps<"/jobs/[id]">)
                 )}
                 {job.skills.length > 0 && (
                   <div className="skill-list">
-                    <h2>相关技能</h2>
+                    <h2>技能</h2>
                     <div>
                       {job.skills.map((skill) => (
                         <span className="tag" key={skill}>
@@ -168,8 +169,8 @@ export default async function JobDetailPage({ params }: PageProps<"/jobs/[id]">)
             <section className="detail-section original-post">
               <div className="detail-section-title">
                 <div>
-                  <p className="section-label">原帖内容</p>
-                  <h2>发布者怎么说</h2>
+                  <p className="section-label">原帖</p>
+                  <h2>发布内容</h2>
                 </div>
               </div>
               <p>{job.originalText}</p>
@@ -183,16 +184,14 @@ export default async function JobDetailPage({ params }: PageProps<"/jobs/[id]">)
             </section>
 
             <aside className="source-notice">
-              <strong>温馨提示</strong>
-              <p>
-                这条机会来自公开社交帖子。投递或联系前，请自行核实岗位、薪资和对方身份。
-              </p>
+              <strong>提示</strong>
+              <p>来自公开社交帖子。投递前请自行核实岗位、薪资与对方身份。</p>
             </aside>
           </article>
 
           <aside className="detail-aside">
             <div className="detail-summary">
-              <p className="section-label">怎么投</p>
+              <p className="section-label">投递</p>
               <dl>
                 <div>
                   <dt>公司</dt>
@@ -227,6 +226,7 @@ export default async function JobDetailPage({ params }: PageProps<"/jobs/[id]">)
                 </a>
               )}
             </div>
+            <JobTrustPanel job={job} />
             {(job.likes > 0 || job.comments > 0) && (
               <div className="detail-engagement">
                 <span>

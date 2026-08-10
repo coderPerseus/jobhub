@@ -35,7 +35,7 @@ export function SiteHeader() {
   return (
     <header className={`site-header page-shell${open ? " is-open" : ""}`}>
       <Link className="wordmark" href="/" aria-label="jobhub 首页">
-        <img alt="" height="32" src="/brand/jobhub-logo.png" width="32" />
+        <img alt="" height="24" src="/brand/jobhub-logo.png" width="24" />
         <span>jobhub</span>
       </Link>
 
@@ -46,13 +46,13 @@ export function SiteHeader() {
           </Link>
         ))}
         <Link className="nav-cta-mobile" href="/jobs" onClick={() => setOpen(false)}>
-          开始找工作 <span aria-hidden="true">↗</span>
+          找工作 <span aria-hidden="true">↗</span>
         </Link>
       </nav>
 
       <div className="header-actions">
         <Link className="header-cta" href="/jobs">
-          开始找工作 <span aria-hidden="true">↗</span>
+          找工作 <span aria-hidden="true">↗</span>
         </Link>
         <button
           aria-controls={menuId}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { JobTrustBadge } from "../../components/job-trust";
 import { PlatformIcon } from "../../components/platform-icon";
 import { categoryLabels, type Job } from "../../lib/jobs";
 
@@ -14,7 +15,7 @@ export function JobTable({ jobs }: { jobs: Job[] }) {
         <thead>
           <tr>
             <th>岗位</th>
-            <th>公司 / 来源</th>
+            <th>公司</th>
             <th>工作地点</th>
             <th>职位类型</th>
             <th>发布时间</th>
@@ -32,22 +33,28 @@ export function JobTable({ jobs }: { jobs: Job[] }) {
             return (
               <tr key={job.id}>
                 <td className="job-table-position">
-                  <Link href={href}>{job.title}</Link>
+                  <Link
+                    aria-label={`查看 ${job.title} 的详情`}
+                    className="job-table-row-link"
+                    href={href}
+                  />
+                  <span className="job-table-position-title">{job.title}</span>
                   <div className="job-table-position-meta">
                     <span>{categoryLabels[job.category]}</span>
+                    <JobTrustBadge job={job} />
                     {job.salary && useful(job.salary) && <span>{job.salary}</span>}
                   </div>
                 </td>
-                <td className="job-table-company" data-label="公司 / 来源">
-                  <span className="job-table-avatar" aria-hidden="true">
-                    {company.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span>
-                    <strong>{company}</strong>
-                    <small>
-                      <PlatformIcon platform={job.platform} size={13} />
+                <td className="job-table-company" data-label="公司">
+                  <strong title={company}>{company}</strong>
+                  <span
+                    className="job-table-platform"
+                    title={job.platform === "XHS" ? "小红书" : "X"}
+                  >
+                    <PlatformIcon platform={job.platform} size={14} />
+                    <span className="sr-only">
                       {job.platform === "XHS" ? "小红书" : "X"}
-                    </small>
+                    </span>
                   </span>
                 </td>
                 <td className="job-table-location" data-label="地点" title={location}>{location}</td>
@@ -60,9 +67,9 @@ export function JobTable({ jobs }: { jobs: Job[] }) {
                   <time dateTime={job.publishedAt}>{job.relativeTime}</time>
                 </td>
                 <td className="job-table-action">
-                  <Link href={href} aria-label={`查看 ${job.title} 的详情`}>
-                    查看详情 <span aria-hidden="true">→</span>
-                  </Link>
+                  <span>
+                    详情 <span aria-hidden="true">→</span>
+                  </span>
                 </td>
               </tr>
             );

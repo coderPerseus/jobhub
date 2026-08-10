@@ -5,6 +5,13 @@ export type Platform = "XHS" | "X";
 export type JobCategory = "ai" | "fullstack" | "frontend" | "backend" | "mobile" | "product" | "design" | "data" | "operations" | "marketing" | "other";
 export type TimeRange = "24h" | "3d" | "7d" | "all";
 export type JobSort = "latest" | "popular";
+export type CredibilitySignal = "positive" | "mixed" | "negative";
+export type FactualVerificationStatus =
+  | "not_applicable"
+  | "unverified"
+  | "partially_verified"
+  | "verified"
+  | "conflicting";
 export type Job = {
   id: string;
   platform: Platform;
@@ -31,6 +38,11 @@ export type Job = {
   applicationDeadline: string | null;
   confidence: number | null;
   structuredAt: string | null;
+  contentCompleteness: number | null;
+  credibilitySignal: CredibilitySignal | null;
+  factualVerificationStatus: FactualVerificationStatus | null;
+  shouldPublish: boolean | null;
+  reviewReason: string | null;
   tags: string[];
   relativeTime: string;
   updatedRelativeTime: string;
@@ -84,6 +96,11 @@ type ApiJob = {
   structured_summary: string | null;
   confidence: number | null;
   structured_at: string | null;
+  content_completeness: number | null;
+  credibility_signal: CredibilitySignal | null;
+  factual_verification_status: FactualVerificationStatus | null;
+  should_publish: boolean | number | null;
+  review_reason: string | null;
 };
 
 export type JobPage = {
@@ -192,6 +209,13 @@ function toJob(value: ApiJob): Job {
     applicationDeadline: value.application_deadline || null,
     confidence: value.confidence,
     structuredAt: value.structured_at,
+    contentCompleteness: value.content_completeness,
+    credibilitySignal: value.credibility_signal,
+    factualVerificationStatus: value.factual_verification_status,
+    shouldPublish: value.should_publish == null
+      ? null
+      : value.should_publish === true || value.should_publish === 1,
+    reviewReason: value.review_reason,
     tags: [categoryLabels[value.category], value.platform === "XHS" ? "小红书" : "X"],
     relativeTime: published.label,
     updatedRelativeTime: updated.label,

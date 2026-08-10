@@ -100,7 +100,7 @@ export function JobCard({ compact = false, job }: { compact?: boolean; job: Job 
               <JobEngagement comments={job.comments} likes={job.likes} />
               {hasApplication && <span className="application-ready">可投递</span>}
               <span className="job-link">
-                看看详情 <b aria-hidden="true">→</b>
+                详情 <b aria-hidden="true">→</b>
               </span>
             </div>
           </div>

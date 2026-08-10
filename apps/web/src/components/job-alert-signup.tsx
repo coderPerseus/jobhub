@@ -44,8 +44,8 @@ export function JobAlertSignup({ compact = false }: { compact?: boolean }) {
     <form className={`alert-signup${compact ? " alert-signup-compact" : ""}`} onSubmit={submit}>
       <div className="alert-signup-heading">
         <p className="section-label">免费订阅</p>
-        <h2>有适合你的新机会，发到邮箱。</h2>
-        <p>选好想关注的方向，有新岗位时我们会第一时间通知你。</p>
+        <h2>有新机会，发到邮箱。</h2>
+        <p>选好方向，新岗位第一时间通知你。</p>
       </div>
       <fieldset className="alert-categories">
         <legend>你在找什么方向？</legend>

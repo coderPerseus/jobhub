@@ -71,7 +71,7 @@ export default async function JobsPage({
             <span /> 每日更新
           </p>
           <h1>最新工作机会</h1>
-          <p className="jobs-heading-desc">来自小红书与 X，帮你挑出值得看的岗位</p>
+          <p className="jobs-heading-desc">来自小红书与 X 的互联网岗位</p>
         </div>
       </section>
       <JobExplorer

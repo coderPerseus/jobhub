@@ -4,7 +4,7 @@ import { JobCard } from "../components/job-card";
 import { JobAlertSignup } from "../components/job-alert-signup";
 import { SiteHeader } from "../components/site-header";
 import { PlatformIcon } from "../components/platform-icon";
-import { getJobs, type Job } from "../lib/jobs";
+import { getJobs } from "../lib/jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -12,15 +12,15 @@ const signals = [
   {
     label: "小红书",
     platform: "XHS" as const,
-    value: "生活社区里的招聘",
-    detail: "很多机会先发在这里，还没上招聘网站",
+    value: "生活社区招聘",
+    detail: "很多机会先发在这里",
     tone: "red" as const,
   },
   {
     label: "X",
     platform: "X" as const,
     value: "全球实时分享",
-    detail: "创始人、团队和猎头常在这里公开招人",
+    detail: "创始人与团队常在此公开招人",
     tone: "black" as const,
   },
 ];
@@ -28,35 +28,27 @@ const signals = [
 const values = [
   { icon: "◷", title: "新鲜优先", desc: "优先展示最近发布的机会" },
   { icon: "↻", title: "持续更新", desc: "每天都有新岗位进入列表" },
-  { icon: "▽", title: "不重复打扰", desc: "同一岗位只出现一次" },
+  { icon: "▽", title: "去重聚合", desc: "同一岗位只出现一次" },
 ];
 
-/** Mix platforms for hero cards so preview isn't all X or all 小红书. */
-function pickPreviewJobs(jobs: Job[], count = 3): Job[] {
-  const xhs = jobs.filter((job) => job.platform === "XHS");
-  const x = jobs.filter((job) => job.platform === "X");
-  const picked: Job[] = [];
-
-  // Prefer one 小红书 + one X first, then fill the rest.
-  if (xhs[0]) picked.push(xhs[0]);
-  if (x[0]) picked.push(x[0]);
-  if (xhs[1] && picked.length < count) picked.push(xhs[1]);
-  else if (x[1] && picked.length < count) picked.push(x[1]);
-
-  for (const job of jobs) {
-    if (picked.length >= count) break;
-    if (!picked.some((item) => item.id === job.id)) picked.push(job);
-  }
-  return picked;
-}
-
 export default async function Home() {
-  const { jobs, total } = await getJobs({ timeRange: "24h" });
-  const hasBothPlatforms =
-    jobs.some((job) => job.platform === "XHS") && jobs.some((job) => job.platform === "X");
-  // If the last 24h is one-sided, widen to 7d so the hero still shows both sources.
-  const previewSource = hasBothPlatforms ? jobs : (await getJobs({ timeRange: "7d" })).jobs;
-  const previewJobs = pickPreviewJobs(previewSource, 3);
+  const latest = await getJobs({ timeRange: "24h" });
+  let xhsJobs = latest.jobs.filter((job) => job.platform === "XHS");
+  let xJobs = latest.jobs.filter((job) => job.platform === "X");
+
+  // Keep the preview representative of both sources. The API places the
+  // highest AI-quality jobs first; widen only the source that lacks fresh jobs.
+  const [xhsFallback, xFallback] = await Promise.all([
+    xhsJobs.length >= 2 ? null : getJobs({ platforms: ["XHS"], timeRange: "7d" }),
+    xJobs.length >= 1 ? null : getJobs({ platforms: ["X"], timeRange: "7d" }),
+  ]);
+  if (xhsFallback) xhsJobs = xhsFallback.jobs;
+  if (xFallback) xJobs = xFallback.jobs;
+
+  const previewJobs = [xhsJobs[0], xJobs[0], xhsJobs[1]].filter(
+    (job): job is NonNullable<typeof job> => Boolean(job),
+  );
+  const total = latest.total;
 
   return (
     <main>
@@ -90,7 +82,7 @@ export default async function Home() {
             工作机会，都在这里。
           </h1>
           <p className="hero-intro">
-            小红书和 X 上每天都有人在招人。jobhub 帮你把这些机会整理好，让你更快看到值得投的岗位。
+            聚合小红书与 X 上的招聘信息，帮你更快看到值得投的岗位。
           </p>
 
           <form className="hero-search" action="/jobs">
@@ -101,10 +93,10 @@ export default async function Home() {
             <input
               id="hero-query"
               name="q"
-              placeholder="试试：前端、远程、设计师、实习…"
+              placeholder="前端、远程、设计师、实习…"
             />
             <button type="submit">
-              开始找工作 <b aria-hidden="true">↗</b>
+              找工作 <b aria-hidden="true">↗</b>
             </button>
           </form>
 
@@ -112,7 +104,7 @@ export default async function Home() {
             <strong>
               <i /> 今日动态
             </strong>
-            <span>覆盖小红书与 X</span>
+            <span>小红书 · X</span>
             {total > 0 && (
               <>
                 <span className="live-dot" aria-hidden="true" />
@@ -144,13 +136,13 @@ export default async function Home() {
       <section className="source-section page-shell" id="sources">
         <div className="source-copy">
           <p className="section-label">机会从哪来</p>
-          <h2>越来越多的招聘信息在社媒上发布。</h2>
+          <h2>招聘信息，先出现在社媒上。</h2>
         </div>
         <div className="signal-grid">
           {signals.map((signal) => (
             <article className="signal-card" key={signal.label}>
               <span className={`platform-mark platform-mark-${signal.tone}`}>
-                <PlatformIcon platform={signal.platform} size={22} />
+                <PlatformIcon platform={signal.platform} size={18} />
               </span>
               <div>
                 <strong>{signal.label}</strong>
@@ -182,11 +174,7 @@ export default async function Home() {
 
       <section className="landing-cta page-shell" id="about">
         <p>今天或许就有适合你的岗位</p>
-        <h2>
-          少刷一点信息流，
-          <br />
-          多看一点新机会。
-        </h2>
+        <h2>少刷信息流，多看新机会。</h2>
         <Link className="button-primary" href="/jobs">
           浏览全部机会 <span>↗</span>
         </Link>
