@@ -108,8 +108,8 @@ app.get("/jobs", async (c) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.min(page, totalPages);
   const orderBy = sort === "popular"
-    ? "j.likes + j.comments + j.reposts DESC, j.published_at DESC"
-    : "j.published_at DESC";
+    ? "COALESCE(q.score, -1) DESC, j.likes + j.comments + j.reposts DESC, j.published_at DESC"
+    : "COALESCE(q.score, -1) DESC, j.published_at DESC";
   const result = await c.env.DB.prepare(
     `SELECT j.id, j.platform, j.platform_post_id, j.title, j.body, j.excerpt, j.author_name,
       j.author_handle, j.source_url, j.published_at, j.first_seen_at, j.last_seen_at,
@@ -125,7 +125,8 @@ app.get("/jobs", async (c) => {
      FROM jobs j
      LEFT JOIN job_structured_details s ON s.job_id = j.id
      LEFT JOIN job_ocr_results o ON o.job_id = j.id
-     LEFT JOIN job_ai_reviews r ON r.job_id = j.id ${where}
+     LEFT JOIN job_ai_reviews r ON r.job_id = j.id
+     LEFT JOIN job_ai_scores q ON q.job_id = j.id ${where}
      ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
   ).bind(...bindings, pageSize, (currentPage - 1) * pageSize).all();
 

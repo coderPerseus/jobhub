@@ -98,6 +98,8 @@ describe("API", () => {
     expect(rowsBind).toHaveBeenCalledWith("frontend", "backend", 100, 100);
     expect(prepare.mock.calls.every(([statement]) => statement.includes("LEFT JOIN job_structured_details"))).toBe(true);
     expect(prepare.mock.calls.some(([statement]) => statement.includes("s.company_name"))).toBe(true);
+    expect(prepare.mock.calls.some(([statement]) => statement.includes("LEFT JOIN job_ai_scores q"))).toBe(true);
+    expect(prepare.mock.calls.some(([statement]) => statement.includes("ORDER BY COALESCE(q.score, -1) DESC"))).toBe(true);
   });
 
   it("rejects an email subscription without a selected job category", async () => {
